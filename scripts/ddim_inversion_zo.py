@@ -133,7 +133,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             #     x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
             #     x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
             #     x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
-            #     Image.fromarray(x_sample).save(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}/x_inter_t={t}.png")
+            #     Image.fromarray(x_sample).save(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}/x_inter_t={t:03d}.png")
             # pngs_to_gif(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}/", f"outputs/{animal_name}/ddim_inv_trajectory_of_renderings_{animal_name}.gif")
             asset = f"assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_{optimize_iter}.torch"
             torch.save(intermediates["x_inter"], asset)
@@ -179,14 +179,14 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
                 x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
                 x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
                 x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
-                Image.fromarray(x_sample).save(f"forward_cache_artefacts/{animal_name}/reconstruction/iter{optimize_iter}/pred_x0_t={t}.png")
+                Image.fromarray(x_sample).save(f"forward_cache_artefacts/{animal_name}/reconstruction/iter{optimize_iter}/pred_x0_t={t:03d}.png")
             for t, x_t in enumerate(intermediates["x_inter"]):
                 x_sample = model.decode_first_stage(x_t)
                 x_sample = x_sample[::2]
                 x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
                 x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
                 x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
-                Image.fromarray(x_sample).save(f"forward_cache_artefacts/{animal_name}/reconstruction/iter{optimize_iter}/x_inter_t={t}.png")
+                Image.fromarray(x_sample).save(f"forward_cache_artefacts/{animal_name}/reconstruction/iter{optimize_iter}/x_inter_t={t:03d}.png")
             pngs_to_gif(f"forward_cache_artefacts/{animal_name}/reconstruction/iter{optimize_iter}/", f"outputs/{animal_name}/forward_reconstruction_x_inter_{animal_name}_iter{optimize_iter}.gif", startswith="x_inter")
             pngs_to_gif(f"forward_cache_artefacts/{animal_name}/reconstruction/iter{optimize_iter}/", f"outputs/{animal_name}/forward_reconstruction_pred_x0_{animal_name}_iter{optimize_iter}.gif", startswith="pred_x0")
             x_sample = model.decode_first_stage(x_t)

@@ -4,8 +4,8 @@ from PIL import Image
 def pngs_to_gif(input_directory, output_gif_name, duration=200, startswith='x_inter'):
     # Get all PNG images from the directory
     png_files = [f for f in os.listdir(input_directory) if (f.endswith('.png') and f.startswith(startswith) and '15' not in f)]
-    # print(png_files)
-    # png_files.sort()  # Sort images to keep the order
+    png_files.sort()  # Sort images to keep the order
+    print(png_files)
 
     # Load images
     images = [Image.open(os.path.join(input_directory, file)) for file in png_files]

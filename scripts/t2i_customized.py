@@ -1,7 +1,8 @@
 import os
-import sys
+import json
 import glob
 import random
+from datetime import datetime
 import argparse
 from PIL import Image
 import numpy as np
@@ -17,6 +18,7 @@ from torchvision.transforms.functional import to_tensor
 from pngs2gif import pngs_to_gif
 
 FORMAT_INTERLEAVED = True
+current_time = datetime.now().strftime("%y%m%d%H%M%S")
 
 def set_seed(seed):
     random.seed(seed)
@@ -36,19 +38,24 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5,
     
     if type(prompt)!=list:
         prompt = [prompt]
+    
+    os.makedirs(f"outputs/{animal_name}_seed{args.seed}_{current_time}/", exist_ok=True)
+    os.makedirs(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/", exist_ok=True)
+    os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", exist_ok=True)
+    os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", exist_ok=True)
 
     with torch.no_grad(), torch.autocast(device_type=device, dtype=dtype):
         ### prepare conditions
         # prompt = "a goose flying, wings expanded, 3d asset"
-        # prompt = "a black and white cow standing, 3d asset"
         # prompt = "a black and white cow running, legs bent, font legs bent, back legs bent, 3d asset"
         # prompt = "piggy running, front legs folded at the knees, 3d asset"
         # prompt = "a brown sheep running, legs bent at the knees, front legs bent, back legs bent, 3d asset"
-        prompt = "a gray horse, dark mane on back of its neck, dark tail, running, galloping, front legs bent, back legs bent at the knees, 3d asset"
+        # prompt = "a gray horse, dark mane on back of its neck, dark tail, running, galloping, front legs bent, back legs bent at the knees, 3d asset"
+        # prompt = "a running brown ram, legs bent at the knees, 3d asset"
         c0 = model.get_learned_conditioning(prompt).to(device)
         c1 = model.get_learned_conditioning(prompt).to(device)
         c_ = {"context": torch.cat([c0, c1]).repeat(batch_size//2,1,1)}
-        uc = model.get_learned_conditioning("standing, legs straight").to(device)
+        uc = model.get_learned_conditioning("extra tail, extra limbs, missing limbs, bad anatomy").to(device)
         uc_ = {"context": uc.repeat(batch_size,1,1)}
         if camera is not None:
             c_["camera"] = uc_["camera"] = camera
@@ -56,7 +63,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5,
         shape = [4, image_size // 8, image_size // 8] # [4, 32, 32]
 
         ### load saved trajectory
-        asset = f"assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{args.seed}_seed{args.seed}.torch"
+        asset = f"assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{args.inversion_seed}.torch"
         sampler.make_schedule(ddim_num_steps=step, ddim_eta=0)
 
         cached_trajectory = torch.load(asset)   
@@ -64,9 +71,9 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5,
             cached_trajectory = cached_trajectory[::-1] 
         # now cached_trajectory is from noisiest to cleanest
             
-        x_T = cached_trajectory[25].to(device)
+        x_T = cached_trajectory[35].to(device)
         # x_T = sampler.stochastic_encode(cached_trajectory[0], torch.tensor([20]).to(device))
-        visualize(x_T, f"outputs/{animal_name}_seed{args.seed}/t2i-starting-point.png")
+        visualize(x_T, f"outputs/{animal_name}_seed{args.seed}_{current_time}/t2i-starting-point.png")
 
         ### denoise with supervision from referenec frame through rewired self-attention
         samples_ddim, intermediates = sampler.sample(S=step, conditioning=c_,
@@ -83,11 +90,11 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5,
         for f in files:
             os.remove(f)
         for t, x_t in enumerate(intermediates["pred_x0"]):
-            visualize(x_t, f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/pred_x0_t={t}.png")
+            visualize(x_t, f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/pred_x0_t={t:03d}.png")
         for t, x_t in enumerate(intermediates["x_inter"]):
-            visualize(x_t, f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/x_inter_t={t}.png")
-        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", f"outputs/{animal_name}_seed{args.seed}/forward_articulation_x_inter_{animal_name}_seed{args.seed}.gif", startswith="x_inter")
-        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", f"outputs/{animal_name}_seed{args.seed}/forward_articulation_pred_x0_{animal_name}_seed{args.seed}.gif", startswith="pred_x0")
+            visualize(x_t, f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/x_inter_t={t:03d}.png")
+        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", f"outputs/{animal_name}_seed{args.seed}_{current_time}/forward_articulation_x_inter_{animal_name}_seed{args.seed}.gif", startswith="x_inter")
+        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", f"outputs/{animal_name}_seed{args.seed}_{current_time}/forward_articulation_pred_x0_{animal_name}_seed{args.seed}.gif", startswith="pred_x0")
         
         x_sample = model.decode_first_stage(samples_ddim)
         x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
@@ -97,12 +104,12 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5,
 
 
 if __name__ == "__main__":
-
+    available_animal_assets = os.listdir('assets/renderings/')
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="sd-v2.1-base-4view", help="load pre-trained model from hugginface")
     parser.add_argument("--config_path", type=str, default=None, help="load model from local config (override model_name)")
     parser.add_argument("--ckpt_path", type=str, default=None, help="path to local checkpoint")
-    parser.add_argument("--text", type=str, default="a cow standing still legs straight")
+    parser.add_argument("--text", type=str, default="a black and white cow running, legs bent, font legs bent, back legs bent, 3d asset")
     parser.add_argument("--suffix", type=str, default=", 3d asset")
     parser.add_argument("--size", type=int, default=256)
     parser.add_argument("--step", type=int, default=50)
@@ -113,11 +120,12 @@ if __name__ == "__main__":
     parser.add_argument("--camera_elev", type=int, default=15)
     parser.add_argument("--camera_azim", type=int, default=135)
     parser.add_argument("--camera_azim_span", type=int, default=360)
+    parser.add_argument("--inversion_seed", type=int, default=2025)
     parser.add_argument("--seed", type=int, default=2025)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
-                        choices=["horse_stallion_highpoly_color_2",  "piggy_albedo_1", "sheep_highpoly"])
+                        choices=available_animal_assets)
     args = parser.parse_args()
 
     dtype = torch.float16 if args.fp16 else torch.float32
@@ -159,8 +167,11 @@ if __name__ == "__main__":
         img = t2i(model, args.size, t, uc, sampler, args.animal_name, step=args.step, scale=10, batch_size=batch_size, ddim_eta=0.0, 
                 dtype=dtype, device=device, camera=camera, num_frames=args.num_frames, start_time_step=args.start_time_step)
         for i, im in enumerate(img):
-            Image.fromarray(im).save(f"outputs/{args.animal_name}/sample_{i}.png")
+            Image.fromarray(im).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample_{i}.png")
         img = np.concatenate(img, 1)
         images.append(img)
     images = np.concatenate(images, 0)
-    Image.fromarray(images).save(f"outputs/{args.animal_name}/sample.png")
+    Image.fromarray(images).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample.png")
+    args.save_json = f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/articulation_args.json"
+    with open(args.save_json, 'w+') as f:
+        json.dump(vars(args), f, indent=4)
