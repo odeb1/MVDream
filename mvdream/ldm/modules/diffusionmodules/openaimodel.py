@@ -1001,13 +1001,7 @@ class MultiViewUNetModel(nn.Module):
                     if not exists(num_attention_blocks) or nr < num_attention_blocks[level]:
                         print('Down Block')
                         layers.append(
-                            AttentionBlock(
-                                ch,
-                                use_checkpoint=use_checkpoint,
-                                num_heads=num_heads,
-                                num_head_channels=dim_head,
-                                use_new_attention_order=use_new_attention_order,
-                            ) if not use_spatial_transformer else SpatialTransformer3D(
+                            SpatialTransformer3D(
                                 ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
                                 disable_self_attn=disabled_sa, use_linear=use_linear_in_transformer,
                                 use_checkpoint=use_checkpoint, rewired_sa=True,
