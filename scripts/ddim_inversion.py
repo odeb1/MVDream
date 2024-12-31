@@ -45,12 +45,12 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
         c_ = {"context": torch.cat([c0, c1]).repeat(batch_size//2,1,1)}
         ##### for vf, context in enumerate(c_["context"]):  print(vf, context.shape, context[4:16])
         # uc = model.get_learned_conditioning("resting, wings tucked in, wings folded tightly against its sides").to(device)
-        uc = model.get_learned_conditioning("standing, straight legs").to(device)
+        uc = model.get_learned_conditioning("").to(device)
         uc_ = {"context": uc.repeat(batch_size,1,1)}
         if camera is not None:
             c_["camera"] = uc_["camera"] = camera
             c_["num_frames"] = uc_["num_frames"] = num_frames
-        shape = [4, image_size // 8, image_size // 8] # [4, 32, 32]
+        shape = [args.num_frames//2, image_size // 8, image_size // 8] # [4, 32, 32]
 
         os.makedirs(f"outputs/{animal_name}_seed{args.seed}/", exist_ok=True)
         os.makedirs(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/", exist_ok=True)
@@ -58,10 +58,12 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
         os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", exist_ok=True)
         
         x = []
-        for i in range(4):
+        azimuthal_interval = 360 // (args.num_frames//2)
+        print(azimuthal_interval, "azimuthal_interval")
+        for i in range(args.num_frames//2):
             # Load the image
             a = animal_name.split("_")[0]
-            image = Image.open(os.path.join(f"assets/renderings/{animal_name}/", f"{a}_{45+90*i:03d}.png")).resize((512,512)).convert("RGB")
+            image = Image.open(os.path.join(f"assets/renderings/{animal_name}/", f"{a}_{45+azimuthal_interval*i:03d}.png")).resize((512,512)).convert("RGB")
             
             # Apply the transformations
             image = TF.adjust_brightness(image, brightness)
@@ -73,7 +75,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             
         x = torch.stack(x).to(device) * 2.0 - 1.0
         x = F.interpolate(x, (256, 256))
-        print(x.shape)
+        
         x_T = model.encode_first_stage(x).mean #.sample() # DiagonalGaussianDistribution
         x_T = x_T * 0.18215 # IMPORTANT!!
 
@@ -82,6 +84,8 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
         else:
             repeater = num_frames // 4
             x_T = x_T.repeat(repeater, 1, 1, 1)      # ABCDABCD
+            
+        print(x_T.shape, c_["context"].shape, uc_["context"].shape, shape, batch_size)
         samples, intermediates_inversion = sampler.sample_inversion(S=step, conditioning=c_,
                                     batch_size=batch_size, shape=shape,
                                     verbose=False, 

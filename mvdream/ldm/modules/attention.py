@@ -429,6 +429,62 @@ class BasicTransformerBlock3D(BasicTransformerBlock):
         x = self.attn2(self.norm2(x), self.norm2(x), context=context) + x
         x = self.ff(self.norm3(x)) + x
         return x
+    
+    def _forward(self, x_0, x_1, context=None, num_frames=1, rewired_sa=False):
+        # move prompt to a less significant bit such that chunk will split the tensor into different views
+        x_1 = rearrange(x_1, '(p b) l c -> (b p) l c', p=2).contiguous()
+        x_0 = rearrange(x_0, '(p b) l c -> (b p) l c', p=2).contiguous()
+
+        if not DEBUG[0]:
+            frame_1_views = x_1.clone().chunk(4) # x_v0_f1, x_v1_f1, x_v2_f1, x_v3_f1
+            frame_0_views = x_0.clone().chunk(4) # x_v0_f0, x_v1_f0, x_v2_f0, x_v3_f0
+            # each x_v*_f* should be [2, l, c] if classifier guidance is on
+            frame1_result_collector = []
+
+            # Perform SA for f1
+            for view in range(4):
+                # _x_1 = x_1.clone() #frame_1_views[view].clone().repeat(4, 1, 1)
+                _x_1 = rearrange(x_1, '(b p) ... -> (p b) ...', p=2)
+                if view == 0:
+                    _x_0 = torch.cat([frame_0_views[0], frame_1_views[1], frame_1_views[2], frame_1_views[3]], dim=0)
+                elif view == 1:
+                    _x_0 = torch.cat([frame_1_views[0], frame_0_views[1], frame_1_views[2], frame_1_views[3]], dim=0)
+                elif view == 2:
+                    _x_0 = torch.cat([frame_1_views[0], frame_1_views[1], frame_0_views[2], frame_1_views[3]], dim=0)
+                elif view == 3:
+                    _x_0 = torch.cat([frame_1_views[0], frame_1_views[1], frame_1_views[2], frame_0_views[3]], dim=0)
+                # _x_0 = frame_0_views[view].clone().repeat(4, 1, 1)
+                _x_0 = rearrange(_x_0, '(b p) l c ->  (p b) l c', p=2)
+
+                _x_1 = rearrange(_x_1, "(b v) l c -> b (v l) c", v=num_frames).contiguous()
+                _x_0 = rearrange(_x_0, "(b v) l c -> b (v l) c", v=num_frames).contiguous()
+                if rewired_sa: # Rewired Self Attention
+                    _x_1 = self.attn1(self.norm1(_x_0), self.norm1(_x_1), context=context if self.disable_self_attn else None) + _x_1
+                else:
+                    _x_1 = self.attn1(self.norm1(_x_1), self.norm1(_x_1), context=context if self.disable_self_attn else None) + _x_1
+                _x_1 = rearrange(_x_1, "b (v l) c -> b v l c", v=num_frames).contiguous()
+                frame1_result_collector.append(_x_1[:, view]) # [(p=2 b=1) l c]
+                # print(frame1_result_collector[-1].shape)
+
+            x_1 = torch.stack(frame1_result_collector, dim=1) # 4 x [(p b) l c] --> [(p b) v=4 l c]
+            x_1 = rearrange(x_1, "b v l c -> (b v) l c", v=num_frames).contiguous()
+        else:
+            x_1 = rearrange(x_1, '(b p) l c ->  (p b) l c', p=2)
+            x_1 = rearrange(x_1, "(b v) l c -> b (v l) c", v=num_frames).contiguous()
+            x_1 = self.attn1(self.norm1(x_1), self.norm1(x_1), context=context if self.disable_self_attn else None) + x_1
+            x_1 = rearrange(x_1, "b (v l) c -> (b v) l c", v=num_frames).contiguous()
+
+        # Perform SA for f0
+        x_0 = rearrange(x_0, '(b p) l c -> (p b) l c', p=2).contiguous() # recover original format
+        x_0 = rearrange(x_0, "(b v) l c -> b (v l) c", v=num_frames).contiguous()
+        x_0 = self.attn1(self.norm1(x_0), self.norm1(x_0), context=context if self.disable_self_attn else None) + x_0
+        x_0 = rearrange(x_0, "b (v l) c -> (b v) l c", v=num_frames).contiguous()
+
+        # Normal Cross Attention
+        x = torch.cat([x_0, x_1], dim=1)
+        x = self.attn2(self.norm2(x), self.norm2(x), context=context) + x
+        x = self.ff(self.norm3(x)) + x
+        return x
 
 
 class SpatialTransformer3D(nn.Module):
