@@ -114,7 +114,7 @@ if __name__ == "__main__":
     parser.add_argument("--suffix", type=str, default=", 3d asset")
     parser.add_argument("--size", type=int, default=256)
     parser.add_argument("--step", type=int, default=50)
-    parser.add_argument("--start_time_step", type=int, default=35, help="the noisiest time step")
+    parser.add_argument("--start_time_step", type=int, default=30, help="the noisiest time step")
     parser.add_argument("--num_frames", type=int, default=8, help="num of frames (views) to generate")
     parser.add_argument("--num_rows", type=int, default=1, help="number of rows to generate")
     parser.add_argument("--use_camera", type=int, default=1)
@@ -163,16 +163,35 @@ if __name__ == "__main__":
     
     t = args.text + args.suffix
     set_seed(args.seed)
-    images = []
+    all_img_input_target = []
+    input_images = []
+    target_images = []
     for j in range(args.num_rows):
         img = t2i(model, args.size, t, uc, sampler, args.animal_name, step=args.step, scale=10, batch_size=batch_size, ddim_eta=0.0, 
                 dtype=dtype, device=device, camera=camera, num_frames=args.num_frames, start_time_step=args.start_time_step)
         for i, im in enumerate(img):
             Image.fromarray(im).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample_{i}.png")
+            if i % 2 == 0:
+                input_images.append(im)
+            else:
+                target_images.append(im)
         img = np.concatenate(img, 1)
-        images.append(img)
-    images = np.concatenate(images, 0)
-    Image.fromarray(images).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample.png")
+        all_img_input_target.append(img)
+    all_img_input_target = np.concatenate(all_img_input_target, 0)
+    Image.fromarray(all_img_input_target).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample.png")
+    
+    # Save all input images together
+    input_images_concat = np.concatenate(input_images, axis=1)
+    Image.fromarray(input_images_concat).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/input_images.png")
+    
+    # Save all target images together
+    target_images_concat = np.concatenate(target_images, axis=1)
+    Image.fromarray(target_images_concat).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/target_images.png")
+    
+    # Save input and target images together vertically
+    input_target_images_concat = np.concatenate((input_images_concat, target_images_concat), axis=0)
+    Image.fromarray(input_target_images_concat).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/input_target_images_combined.png")
+    
     args.save_json = f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/articulation_args.json"
     with open(args.save_json, 'w+') as f:
         json.dump(vars(args), f, indent=4)
