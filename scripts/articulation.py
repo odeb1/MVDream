@@ -33,7 +33,35 @@ def visualize(model, z, file_name):
     x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
     x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
     Image.fromarray(x_sample).save(file_name)
+    
+def numpy_to_python(obj):
+    """Convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+        np.int16, np.int32, np.int64, np.uint8,
+        np.uint16, np.uint32, np.uint64)):
+        return int(obj)
+    elif isinstance(obj, (np.float16, np.float32, np.float64)):
+        return float(obj)
+    elif isinstance(obj, (np.ndarray,)):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: numpy_to_python(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [numpy_to_python(v) for v in obj]
+    return obj
 
+def save_metrics_json(metrics_dict, filepath):
+    """Safely save metrics dictionary to JSON file."""
+    # Convert all numpy values to Python types
+    json_safe_metrics = {}
+    for depth, metrics in metrics_dict.items():
+        json_safe_metrics[str(depth)] = {  # Convert depth to string for JSON
+            k: numpy_to_python(v) for k, v in metrics.items()
+        }
+    
+    with open(filepath, 'w') as f:
+        json.dump(json_safe_metrics, f, indent=4)
+        
 def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversion_seed=2025,
         num_frames=8, step=20, scale=7.5, batch_size=8, ddim_eta=0., 
         dtype=torch.float32, device="cuda", camera=None, ddim_depth=35,):
@@ -74,10 +102,10 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
             cached_trajectory = cached_trajectory[::-1] 
         # now cached_trajectory is from noisiest to cleanest
             
-        os.makedirs(f"ablations/{animal_name}/ddim_depth_{ddim_depth}", exist_ok=True)
+        os.makedirs(f"outputs/{animal_name}/ddim_depth_{ddim_depth}", exist_ok=True)
         # x_T = sampler.stochastic_encode(cached_trajectory[0], torch.tensor([20]).to(device))
         x_T = cached_trajectory[ddim_depth].to(device)
-        visualize(model, x_T, f"ablations/{animal_name}/ddim_depth_{ddim_depth}/t2i-starting-point.png")
+        visualize(model, x_T, f"outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_t2i-starting-point.png")
 
         ### denoise with supervision from reference frame through rewired self-attention
         samples_ddim, intermediates = sampler.sample(S=step, conditioning=c_,
@@ -91,17 +119,18 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
         
         mse_pred_x0 = []
         mse_x_inter = []
+        target = intermediates["pred_x0"][-1][0::2]
         for t, x_t in enumerate(intermediates["pred_x0"]):
-            mse = F.mse_loss(x_t[0::2], x_t[1::2]).item()
+            mse = F.mse_loss(model.decode_first_stage(target), model.decode_first_stage(x_t[1::2])).item()
             mse_pred_x0.append(mse)
             if t == 50:
-                visualize(model, x_t, f"ablations/{animal_name}/ddim_depth_{ddim_depth}/pred_x0_t={t:03d}.png")
+                visualize(model, x_t, f"outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_pred_x0_t={t:03d}.png")
         
         for t, x_t in enumerate(intermediates["x_inter"]):
-            mse = F.mse_loss(x_t[0::2], x_t[1::2]).item()
+            mse = F.mse_loss(model.decode_first_stage(target), model.decode_first_stage(x_t[1::2])).item()
             mse_x_inter.append(mse)
             if t == 50:
-                visualize(model, x_t, f"ablations/{animal_name}/ddim_depth_{ddim_depth}/x_inter_t={t:03d}.png")
+                visualize(model, x_t, f"outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_x_inter_t={t:03d}.png")
         
         plt.figure(figsize=(10, 5))
         plt.plot(mse_pred_x0, label='pred_x0')
@@ -110,7 +139,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
         plt.ylabel('MSE')
         plt.legend()
         plt.title(f'MSE between reference frame and articulation (ddim_depth={ddim_depth})')
-        plt.savefig(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/mse_plot.png")
+        plt.savefig(f"outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_mse_plot.png")
         plt.close()
         
         pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", f"outputs/{animal_name}_seed{seed}_{current_time}/forward_articulation_x_inter_{animal_name}_seed{seed}.gif", startswith="x_inter")
@@ -120,34 +149,10 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
         x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
         x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
 
-    return list(x_sample.astype(np.uint8))
+    return list(x_sample.astype(np.uint8)), mse_pred_x0, mse_x_inter
 
 
-if __name__ == "__main__":
-    available_animal_assets = os.listdir('assets/renderings/')
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="sd-v2.1-base-4view", help="load pre-trained model from hugginface")
-    parser.add_argument("--config_path", type=str, default=None, help="load model from local config (override model_name)")
-    parser.add_argument("--ckpt_path", type=str, default=None, help="path to local checkpoint")
-    parser.add_argument("--text", type=str, default="a black and white cow running, legs bent, font legs bent, back legs bent, 3d asset")
-    parser.add_argument("--suffix", type=str, default=", 3d asset")
-    parser.add_argument("--size", type=int, default=256)
-    parser.add_argument("--step", type=int, default=50)
-    parser.add_argument("--ddim_depth", type=int, default=35, help="ddim_depth")
-    parser.add_argument("--num_frames", type=int, default=8, help="num of frames (views) to generate")
-    parser.add_argument("--num_rows", type=int, default=1, help="number of rows to generate")
-    parser.add_argument("--use_camera", type=int, default=1)
-    parser.add_argument("--camera_elev", type=int, default=15)
-    parser.add_argument("--camera_azim", type=int, default=135)
-    parser.add_argument("--camera_azim_span", type=int, default=360)
-    parser.add_argument("--inversion_seed", type=int, default=2025)
-    parser.add_argument("--seed", type=int, default=2025)
-    parser.add_argument("--fp16", action="store_true")
-    parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
-                        choices=available_animal_assets)
-    args = parser.parse_args()
-
+def run_forward_inference(args):
     dtype = torch.float16 if args.fp16 else torch.float32
     device = args.device
     batch_size = args.num_frames
@@ -186,7 +191,7 @@ if __name__ == "__main__":
     input_images = []
     target_images = []
     for j in range(args.num_rows):
-        img = t2i(model, args.size, t, uc, sampler, args.animal_name, seed=args.seed, inversion_seed=args.inversion_seed,
+        img, _, _ = t2i(model, args.size, t, uc, sampler, args.animal_name, seed=args.seed, inversion_seed=args.inversion_seed,
                   step=args.step, scale=10, batch_size=batch_size, ddim_eta=0.0, dtype=dtype, device=device, 
                   camera=camera, num_frames=args.num_frames, ddim_depth=args.ddim_depth)
         for i, im in enumerate(img):
@@ -195,25 +200,298 @@ if __name__ == "__main__":
                 input_images.append(im)
             else:
                 target_images.append(im)
+                Image.fromarray(im).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/{args.animal_name}_ddim_depth_{args.ddim_depth}_f1v{i//2}.png")
         img = np.concatenate(img, 1)
         all_img_input_target.append(img)
     all_img_input_target = np.concatenate(all_img_input_target, 0)
-    ddim_depth = args.ddim_depth
-    animal_name = args.animal_name
-    Image.fromarray(all_img_input_target).save(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/sample.png")
+
+    Image.fromarray(all_img_input_target).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_sample.png")
     
     # Save all input images together
     input_images_concat = np.concatenate(input_images, axis=1)
-    Image.fromarray(input_images_concat).save(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/input_images.png")
+    Image.fromarray(input_images_concat).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_input_images.png")
     
     # Save all target images together
     target_images_concat = np.concatenate(target_images, axis=1)
-    Image.fromarray(target_images_concat).save(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/target_images.png")
+    Image.fromarray(target_images_concat).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_target_images.png")
     
     # Save input and target images together vertically
     input_target_images_concat = np.concatenate((input_images_concat, target_images_concat), axis=0)
-    Image.fromarray(input_target_images_concat).save(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/input_target_images_combined.png")
+    Image.fromarray(input_target_images_concat).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_input_target_images_combined.png")
     
-    args.save_json = f"ablations/{animal_name}/ddim_depth_{ddim_depth}/articulation_args.json"
+    args.save_json = f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_articulation_args.json"
     with open(args.save_json, 'w+') as f:
         json.dump(vars(args), f, indent=4)
+        
+def run_ddim_depth_ablation(args):
+    """Run ablation study for different DDIM depths and automatically select the best one."""
+    dtype = torch.float16 if args.fp16 else torch.float32
+    device = args.device
+    batch_size = args.num_frames
+
+    print("Loading t2i model...")
+    if args.config_path is None:
+        model = build_model(args.model_name, ckpt_path=args.ckpt_path)
+    else:
+        assert args.ckpt_path is not None, "ckpt_path must be specified!"
+        config = OmegaConf.load(args.config_path)
+        model = instantiate_from_config(config.model)
+        model.load_state_dict(torch.load(args.ckpt_path, map_location="cpu"))
+    model.device = device
+    model.to(device)
+    model.eval()
+
+    sampler = DDIMSampler(model)
+    uc = model.get_learned_conditioning([""] ).to(device)
+    
+    # Pre-compute camera matrices
+    camera = None
+    if args.use_camera:
+        camera = get_camera(args.num_frames//2, elevation=args.camera_elev, 
+                          azimuth_start=args.camera_azim, azimuth_span=args.camera_azim_span)
+        if FORMAT_INTERLEAVED:
+            camera = camera.repeat_interleave(2*batch_size//args.num_frames,dim=0).to(device)
+        else:
+            camera = camera.repeat(2*batch_size//args.num_frames,1).to(device)
+    
+    # Dictionary to store metrics for each depth
+    depth_metrics = {}
+    
+    # Try different DDIM depths
+    for ddim_depth in range(5, 50, 5):
+        print(f"\nTesting DDIM depth: {ddim_depth}")
+        
+        # Create directories for this depth
+        os.makedirs(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}", exist_ok=True)
+        
+        # Run generation with current depth
+        t = args.text + args.suffix
+        set_seed(args.seed)
+        
+        # Generate images with current depth setting
+        img, mse_pred_x0, mse_x_inter = t2i(model, args.size, t, uc, sampler, args.animal_name, 
+                 seed=args.seed, inversion_seed=args.inversion_seed,
+                 step=args.step, scale=10, batch_size=batch_size, 
+                 ddim_eta=0.0, dtype=dtype, device=device,
+                 camera=camera, num_frames=args.num_frames, 
+                 ddim_depth=ddim_depth)
+        
+        # Save the results for this depth
+        input_images = []
+        target_images = []
+        
+        for i, im in enumerate(img):
+            Image.fromarray(im).save(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}/sample_{i}.png")
+            if i % 2 == 0:
+                input_images.append(im)
+            else:
+                target_images.append(im)
+        
+        # Save combined visualizations
+        input_images_concat = np.concatenate(input_images, axis=1)
+        target_images_concat = np.concatenate(target_images, axis=1)
+        Image.fromarray(input_images_concat).save(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}/input_images.png")
+        Image.fromarray(target_images_concat).save(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}/target_images.png")
+        
+        # Calculate metrics for curve comparison
+        def calculate_curve_metrics(pred_x0_vals, x_inter_vals):
+            # Convert to numpy arrays for easier calculation
+            pred_x0_arr = np.array(pred_x0_vals)
+            x_inter_arr = np.array(x_inter_vals)
+            
+            # Calculate absolute differences between curves
+            differences = np.abs(pred_x0_arr - x_inter_arr)
+            
+            return {
+                'mean_difference': float(np.mean(differences)),
+                'max_difference': float(np.max(differences)),
+                'std_difference': float(np.std(differences)),
+                'convergence_point': int(np.argmin(differences)),
+                'stable_region_size': int(np.sum(differences < 0.1)),
+                'final_difference': float(differences[-1])
+            }
+        
+        metrics = calculate_curve_metrics(mse_pred_x0, mse_x_inter)
+        depth_metrics[ddim_depth] = metrics
+        print(depth_metrics)
+        
+        with open(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}/metrics.json", 'w') as f:
+            json.dump({
+                'mse_pred_x0': numpy_to_python(mse_pred_x0),
+                'mse_x_inter': numpy_to_python(mse_x_inter),
+                'metrics': metrics  # metrics are already Python types from calculate_curve_metrics
+            }, f, indent=4)
+    
+    # Select optimal depth based on metrics
+    def select_optimal_depth(metrics_dict):
+        scores = {}
+        for depth, metrics in metrics_dict.items():
+            # Calculate a composite score (lower is better)
+            score = (
+                metrics['mean_difference'] * 0.3 +  # Weight for average difference
+                metrics['std_difference'] * 0.2 +   # Weight for stability
+                (1.0 / (metrics['stable_region_size'] + 1)) * 0.3 +  # Weight for convergence
+                metrics['final_difference'] * 0.2    # Weight for final convergence
+            )
+            scores[depth] = score
+            
+        # Find the depth with minimum score
+        optimal_depth = min(scores.items(), key=lambda x: x[1])[0]
+        
+        # Check for sharp transitions after optimal depth
+        depths = sorted(list(metrics_dict.keys()))
+        optimal_idx = depths.index(optimal_depth)
+        
+        # If we're not at the last depth, check for sharp transitions
+        if optimal_idx < len(depths) - 1:
+            next_depth = depths[optimal_idx + 1]
+            score_increase = scores[next_depth] / scores[optimal_depth]
+            
+            # If score gets significantly worse (>50% increase), stick with current depth
+            if score_increase > 1.5:
+                return optimal_depth
+            # If next depth isn't much worse, consider using it
+            elif score_increase < 1.2:
+                return next_depth
+        
+        return optimal_depth
+    
+    optimal_depth = select_optimal_depth(depth_metrics)
+    
+    # Save analysis results
+    analysis_results = {
+        'optimal_depth': optimal_depth,
+        'depth_metrics': depth_metrics,
+        'selection_criteria': {
+            'description': 'Composite score based on mean difference, stability, convergence region, and final difference',
+            'weights': {
+                'mean_difference': 0.3,
+                'std_difference': 0.2,
+                'stable_region_size': 0.3,
+                'final_difference': 0.2
+            }
+        }
+    }
+    with open(f"ablations/{args.animal_name}/ddim_depth_analysis.json", 'w') as f:
+        json.dump(analysis_results, f, indent=4)
+    
+    print(f"\nOptimal DDIM depth selected: {optimal_depth}")
+    print(f"Analysis results saved to: ablations/{args.animal_name}/ddim_depth_analysis.json")
+    
+    return optimal_depth
+
+def run_rewire_switch_ablation(args):
+    """Run ablation study for different rewire switch configurations"""
+    base_output_dir = f"outputs/{args.animal_name}/rewire_switch"
+    os.makedirs(base_output_dir, exist_ok=True)
+    
+    # Run 16 iterations with different rewire configurations
+    for i in range(16):
+        # Create rewire switch configuration with only one True value
+        rewire_switch = [False] * 16
+        rewire_switch[i] = True
+        
+        # Create config override
+        config_override = OmegaConf.create({
+            "model": {
+                "params": {
+                    "unet_config": {
+                        "params": {
+                            "rewire_switch": rewire_switch
+                        }
+                    }
+                }
+            }
+        })
+
+        # Create output directory for this configuration
+        iteration_dir = os.path.join(base_output_dir, f"config_{i}")
+        os.makedirs(iteration_dir, exist_ok=True)
+
+        # Build model with this configuration
+        model = build_model(args.model_name, ckpt_path=args.ckpt_path, config_overrides=config_override)
+        model.device = args.device
+        model.to(args.device)
+        model.eval()
+
+        # Save configuration
+        with open(os.path.join(iteration_dir, "rewire_config.json"), 'w') as f:
+            json.dump({"rewire_switch": rewire_switch}, f, indent=4)
+
+        # Run generation with this configuration
+        sampler = DDIMSampler(model)
+        uc = model.get_learned_conditioning([""]).to(args.device)
+
+        # Set up camera if needed
+        camera = get_camera(args.num_frames//2, elevation=args.camera_elev,
+                          azimuth_start=args.camera_azim, 
+                          azimuth_span=args.camera_azim_span) if args.use_camera else None
+        if camera is not None:
+            if FORMAT_INTERLEAVED:
+                camera = camera.repeat_interleave(2*args.num_frames//args.num_frames,dim=0).to(args.device)
+            else:
+                camera = camera.repeat(2*args.num_frames//args.num_frames,1).to(args.device)
+
+        # Generate images
+        t = args.text + args.suffix
+        images, _, _ = t2i(model, args.size, t, uc, sampler, args.animal_name,
+                    seed=args.seed, inversion_seed=args.inversion_seed,
+                    step=args.step, scale=10, batch_size=args.num_frames,
+                    ddim_eta=0.0, dtype=torch.float32 if not args.fp16 else torch.float16,
+                    device=args.device, camera=camera, num_frames=args.num_frames,
+                    ddim_depth=args.ddim_depth)
+
+        # Save results
+        input_images = []
+        target_images = []
+        for idx, img in enumerate(images):
+            Image.fromarray(img).save(os.path.join(iteration_dir, f"sample_{idx}.png"))
+            if idx % 2 == 0:
+                input_images.append(img)
+            else:
+                target_images.append(img)
+
+        # Save combined visualizations
+        input_images_concat = np.concatenate(input_images, axis=1)
+        target_images_concat = np.concatenate(target_images, axis=1)
+        input_target_combined = np.concatenate((input_images_concat, target_images_concat), axis=0)
+        
+        Image.fromarray(input_images_concat).save(os.path.join(iteration_dir, "input_images.png"))
+        Image.fromarray(target_images_concat).save(os.path.join(iteration_dir, "target_images.png"))
+        Image.fromarray(input_target_combined).save(os.path.join(iteration_dir, "input_target_combined.png"))
+
+
+if __name__ == "__main__":
+    available_animal_assets = os.listdir('assets/renderings/')
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, default="sd-v2.1-base-4view", help="load pre-trained model from hugginface")
+    parser.add_argument("--config_path", type=str, default=None, help="load model from local config (override model_name)")
+    parser.add_argument("--ckpt_path", type=str, default=None, help="path to local checkpoint")
+    parser.add_argument("--text", type=str, default="a black and white cow running, legs bent, font legs bent, back legs bent, 3d asset")
+    parser.add_argument("--suffix", type=str, default=", 3d asset")
+    parser.add_argument("--size", type=int, default=256)
+    parser.add_argument("--step", type=int, default=50)
+    parser.add_argument("--ddim_depth", type=int, default=35, help="ddim_depth")
+    parser.add_argument("--num_frames", type=int, default=8, help="num of frames (views) to generate")
+    parser.add_argument("--num_rows", type=int, default=1, help="number of rows to generate")
+    parser.add_argument("--use_camera", type=int, default=1)
+    parser.add_argument("--camera_elev", type=int, default=15)
+    parser.add_argument("--camera_azim", type=int, default=135)
+    parser.add_argument("--camera_azim_span", type=int, default=360)
+    parser.add_argument("--inversion_seed", type=int, default=2025)
+    parser.add_argument("--seed", type=int, default=2025)
+    parser.add_argument("--fp16", action="store_true")
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
+                        choices=available_animal_assets)
+    parser.add_argument("--run_ddim_depth_ablation", action="store_true")
+    parser.add_argument("--run_rewire_switch_ablation", action="store_true")
+    args = parser.parse_args()
+
+    if args.run_ddim_depth_ablation:
+        optimal_depth = run_ddim_depth_ablation(args)
+    if args.run_rewire_switch_ablation:
+        run_rewire_switch_ablation(args)
+    
+    args.ddim_depth = optimal_depth
+    run_forward_inference(args)
