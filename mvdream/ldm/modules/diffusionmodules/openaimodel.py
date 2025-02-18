@@ -871,8 +871,12 @@ class MultiViewUNetModel(nn.Module):
         use_linear_in_transformer=False,
         adm_in_channels=None,
         camera_dim=None,
+        rewire_switch=[True]*16
     ):
         super().__init__()
+        self.rewire_switch = rewire_switch
+        self.attn_counter = 0 
+        
         if use_spatial_transformer:
             assert context_dim is not None, 'Fool!! You forgot to include the dimension of your cross-attention conditioning...'
 
@@ -1004,9 +1008,10 @@ class MultiViewUNetModel(nn.Module):
                             SpatialTransformer3D(
                                 ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
                                 disable_self_attn=disabled_sa, use_linear=use_linear_in_transformer,
-                                use_checkpoint=use_checkpoint, rewired_sa=True,
+                                use_checkpoint=use_checkpoint, rewired_sa=self.rewire_switch[self.attn_counter],
                             )
                         )
+                        self.attn_counter += 1
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self._feature_size += ch
                 input_block_chans.append(ch)
@@ -1062,7 +1067,7 @@ class MultiViewUNetModel(nn.Module):
             ) if not use_spatial_transformer else SpatialTransformer3D(  # always uses a self-attn
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
                             disable_self_attn=disable_middle_self_attn, use_linear=use_linear_in_transformer,
-                            use_checkpoint=use_checkpoint, rewired_sa=True,
+                            use_checkpoint=use_checkpoint, rewired_sa=self.rewire_switch[self.attn_counter],
                         ),
             ResBlock(
                 ch,
@@ -1073,6 +1078,7 @@ class MultiViewUNetModel(nn.Module):
                 use_scale_shift_norm=use_scale_shift_norm,
             ),
         )
+        self.attn_counter += 1
         self._feature_size += ch
 
         self.output_blocks = nn.ModuleList([])
@@ -1118,9 +1124,10 @@ class MultiViewUNetModel(nn.Module):
                             ) if not use_spatial_transformer else SpatialTransformer3D(
                                 ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
                                 disable_self_attn=disabled_sa, use_linear=use_linear_in_transformer,
-                                use_checkpoint=use_checkpoint, rewired_sa=True,
+                                use_checkpoint=use_checkpoint, rewired_sa=self.rewire_switch[self.attn_counter],
                             )
                         )
+                        self.attn_counter += 1
                 if level and i == self.num_res_blocks[level]:
                     out_ch = ch
                     layers.append(

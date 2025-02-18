@@ -16,6 +16,7 @@ from mvdream.ldm.models.diffusion.ddim import DDIMSampler
 from mvdream.model_zoo import build_model
 from torchvision.transforms.functional import to_tensor
 from pngs2gif import pngs_to_gif
+import matplotlib.pyplot as plt
 
 FORMAT_INTERLEAVED = True
 current_time = datetime.now().strftime("%y%m%d%H%M%S")
@@ -26,23 +27,24 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def visualize(z, file_name):
+def visualize(model, z, file_name):
     x_sample = model.decode_first_stage(z)
     x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
     x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
     x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
     Image.fromarray(x_sample).save(file_name)
 
-def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5, batch_size=8, ddim_eta=0., 
-        dtype=torch.float32, device="cuda", camera=None, num_frames=1, start_time_step=35,):
-    
+def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversion_seed=2025,
+        num_frames=8, step=20, scale=7.5, batch_size=8, ddim_eta=0., 
+        dtype=torch.float32, device="cuda", camera=None, ddim_depth=35,):
+    set_seed(seed)
     if type(prompt)!=list:
         prompt = [prompt]
     
-    os.makedirs(f"outputs/{animal_name}_seed{args.seed}_{current_time}/", exist_ok=True)
-    os.makedirs(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/", exist_ok=True)
-    os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", exist_ok=True)
-    os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", exist_ok=True)
+    os.makedirs(f"outputs/{animal_name}_seed{seed}_{current_time}/", exist_ok=True)
+    os.makedirs(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{seed}/", exist_ok=True)
+    os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{seed}/reconstruction/", exist_ok=True)
+    os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", exist_ok=True)
 
     with torch.no_grad(), torch.autocast(device_type=device, dtype=dtype):
         ### prepare conditions
@@ -61,10 +63,10 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5,
         if camera is not None:
             c_["camera"] = uc_["camera"] = camera
             c_["num_frames"] = uc_["num_frames"] = num_frames
-        shape = [args.num_frames//2, image_size // 8, image_size // 8] # [4, 32, 32]
+        shape = [num_frames//2, image_size // 8, image_size // 8] # [4, 32, 32]
 
         ### load saved trajectory
-        asset = f"assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{args.inversion_seed}.torch"
+        asset = f"assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{inversion_seed}.torch"
         sampler.make_schedule(ddim_num_steps=step, ddim_eta=0)
 
         cached_trajectory = torch.load(asset)   
@@ -72,11 +74,12 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5,
             cached_trajectory = cached_trajectory[::-1] 
         # now cached_trajectory is from noisiest to cleanest
             
-        x_T = cached_trajectory[35].to(device)
+        os.makedirs(f"ablations/{animal_name}/ddim_depth_{ddim_depth}", exist_ok=True)
         # x_T = sampler.stochastic_encode(cached_trajectory[0], torch.tensor([20]).to(device))
-        visualize(x_T, f"outputs/{animal_name}_seed{args.seed}_{current_time}/t2i-starting-point.png")
+        x_T = cached_trajectory[ddim_depth].to(device)
+        visualize(model, x_T, f"ablations/{animal_name}/ddim_depth_{ddim_depth}/t2i-starting-point.png")
 
-        ### denoise with supervision from referenec frame through rewired self-attention
+        ### denoise with supervision from reference frame through rewired self-attention
         samples_ddim, intermediates = sampler.sample(S=step, conditioning=c_,
                                         batch_size=batch_size, shape=shape,
                                         verbose=False, 
@@ -86,16 +89,32 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, step=20, scale=7.5,
                                         start_time_step=0,
                                         cached_trajectory=asset)
         
-        ### examine new trajectory
-        files = glob.glob(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/*.png")
-        for f in files:
-            os.remove(f)
+        mse_pred_x0 = []
+        mse_x_inter = []
         for t, x_t in enumerate(intermediates["pred_x0"]):
-            visualize(x_t, f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/pred_x0_t={t:03d}.png")
+            mse = F.mse_loss(x_t[0::2], x_t[1::2]).item()
+            mse_pred_x0.append(mse)
+            if t == 50:
+                visualize(model, x_t, f"ablations/{animal_name}/ddim_depth_{ddim_depth}/pred_x0_t={t:03d}.png")
+        
         for t, x_t in enumerate(intermediates["x_inter"]):
-            visualize(x_t, f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/x_inter_t={t:03d}.png")
-        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", f"outputs/{animal_name}_seed{args.seed}_{current_time}/forward_articulation_x_inter_{animal_name}_seed{args.seed}.gif", startswith="x_inter")
-        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", f"outputs/{animal_name}_seed{args.seed}_{current_time}/forward_articulation_pred_x0_{animal_name}_seed{args.seed}.gif", startswith="pred_x0")
+            mse = F.mse_loss(x_t[0::2], x_t[1::2]).item()
+            mse_x_inter.append(mse)
+            if t == 50:
+                visualize(model, x_t, f"ablations/{animal_name}/ddim_depth_{ddim_depth}/x_inter_t={t:03d}.png")
+        
+        plt.figure(figsize=(10, 5))
+        plt.plot(mse_pred_x0, label='pred_x0')
+        plt.plot(mse_x_inter, label='x_inter')
+        plt.xlabel('Time step')
+        plt.ylabel('MSE')
+        plt.legend()
+        plt.title(f'MSE between reference frame and articulation (ddim_depth={ddim_depth})')
+        plt.savefig(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/mse_plot.png")
+        plt.close()
+        
+        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", f"outputs/{animal_name}_seed{seed}_{current_time}/forward_articulation_x_inter_{animal_name}_seed{seed}.gif", startswith="x_inter")
+        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", f"outputs/{animal_name}_seed{seed}_{current_time}/forward_articulation_pred_x0_{animal_name}_seed{seed}.gif", startswith="pred_x0")
         
         x_sample = model.decode_first_stage(samples_ddim)
         x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
@@ -114,7 +133,7 @@ if __name__ == "__main__":
     parser.add_argument("--suffix", type=str, default=", 3d asset")
     parser.add_argument("--size", type=int, default=256)
     parser.add_argument("--step", type=int, default=50)
-    parser.add_argument("--start_time_step", type=int, default=30, help="the noisiest time step")
+    parser.add_argument("--ddim_depth", type=int, default=35, help="ddim_depth")
     parser.add_argument("--num_frames", type=int, default=8, help="num of frames (views) to generate")
     parser.add_argument("--num_rows", type=int, default=1, help="number of rows to generate")
     parser.add_argument("--use_camera", type=int, default=1)
@@ -167,8 +186,9 @@ if __name__ == "__main__":
     input_images = []
     target_images = []
     for j in range(args.num_rows):
-        img = t2i(model, args.size, t, uc, sampler, args.animal_name, step=args.step, scale=10, batch_size=batch_size, ddim_eta=0.0, 
-                dtype=dtype, device=device, camera=camera, num_frames=args.num_frames, start_time_step=args.start_time_step)
+        img = t2i(model, args.size, t, uc, sampler, args.animal_name, seed=args.seed, inversion_seed=args.inversion_seed,
+                  step=args.step, scale=10, batch_size=batch_size, ddim_eta=0.0, dtype=dtype, device=device, 
+                  camera=camera, num_frames=args.num_frames, ddim_depth=args.ddim_depth)
         for i, im in enumerate(img):
             Image.fromarray(im).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample_{i}.png")
             if i % 2 == 0:
@@ -178,20 +198,22 @@ if __name__ == "__main__":
         img = np.concatenate(img, 1)
         all_img_input_target.append(img)
     all_img_input_target = np.concatenate(all_img_input_target, 0)
-    Image.fromarray(all_img_input_target).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample.png")
+    ddim_depth = args.ddim_depth
+    animal_name = args.animal_name
+    Image.fromarray(all_img_input_target).save(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/sample.png")
     
     # Save all input images together
     input_images_concat = np.concatenate(input_images, axis=1)
-    Image.fromarray(input_images_concat).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/input_images.png")
+    Image.fromarray(input_images_concat).save(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/input_images.png")
     
     # Save all target images together
     target_images_concat = np.concatenate(target_images, axis=1)
-    Image.fromarray(target_images_concat).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/target_images.png")
+    Image.fromarray(target_images_concat).save(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/target_images.png")
     
     # Save input and target images together vertically
     input_target_images_concat = np.concatenate((input_images_concat, target_images_concat), axis=0)
-    Image.fromarray(input_target_images_concat).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/input_target_images_combined.png")
+    Image.fromarray(input_target_images_concat).save(f"ablations/{animal_name}/ddim_depth_{ddim_depth}/input_target_images_combined.png")
     
-    args.save_json = f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/articulation_args.json"
+    args.save_json = f"ablations/{animal_name}/ddim_depth_{ddim_depth}/articulation_args.json"
     with open(args.save_json, 'w+') as f:
         json.dump(vars(args), f, indent=4)
