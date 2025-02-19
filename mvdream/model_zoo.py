@@ -31,8 +31,7 @@ def get_config_file(config_path):
         raise RuntimeError(f"Config {config_path} not available!")
     return cfg_file
 
-
-def build_model(model_name, ckpt_path=None, cache_dir=None):
+def build_model(model_name, ckpt_path=None, cache_dir=None, config_overrides=None):
     if not model_name in PRETRAINED_MODELS:
         raise RuntimeError(
             f"Model name {model_name} is not a pre-trained model. Available models are:\n- " + \
@@ -40,19 +39,23 @@ def build_model(model_name, ckpt_path=None, cache_dir=None):
         )
     model_info = PRETRAINED_MODELS[model_name]
 
-    # Instiantiate the model
-    print(f"Loading model from config: {model_info['config']}")
+    # Load base config
     config_file = get_config_file(model_info["config"])
     config = OmegaConf.load(config_file)
+    
+    # Apply overrides if provided
+    if config_overrides:
+        config = OmegaConf.merge(config, config_overrides)
+
     model = instantiate_from_config(config.model)
 
-    # Load pre-trained checkpoint from huggingface
+    # Load pre-trained checkpoint
     if not ckpt_path:
         ckpt_path = hf_hub_download(
             repo_id=model_info["repo_id"],
             filename=model_info["filename"],
             cache_dir=cache_dir
         )
-        print(f"Loading model from cache file: {ckpt_path}")
+    print(f"Loading model from cache file: {ckpt_path}")
     model.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
     return model
