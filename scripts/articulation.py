@@ -1,3 +1,4 @@
+import time
 import os
 import json
 import glob
@@ -161,6 +162,8 @@ if __name__ == "__main__":
     else:
         camera = None
     
+    start_time = time.time()
+    
     t = args.text + args.suffix
     set_seed(args.seed)
     all_img_input_target = []
@@ -177,6 +180,10 @@ if __name__ == "__main__":
                 target_images.append(im)
         img = np.concatenate(img, 1)
         all_img_input_target.append(img)
+    
+    end_time = time.time()  # Record the end time 
+    print(f"Articulation.py took {end_time - start_time} seconds to run.")
+    
     all_img_input_target = np.concatenate(all_img_input_target, 0)
     Image.fromarray(all_img_input_target).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample.png")
     
