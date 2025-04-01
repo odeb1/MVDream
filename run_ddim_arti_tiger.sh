@@ -12,8 +12,8 @@ base_command="python scripts/articulation.py --seed 2025 --inversion_seed 2025 -
 # text_inputs=("a tiger is running very fast", "a tiger is walking", "a tiger is standing on back two legs only, front two legs are up in the air", "a tiger is jumping, legs are up in the air", "a tiger is laying on the ground, face should be visible", "a tiger is sitting on the ground")
 # text_inputs=("a dark reddish coloured tiger is sitting on the ground" "a dark reddish coloured tiger is jumping, legs are up in the air" "a dark reddish coloured tiger is running very fast")
 
-# text_inputs=("a dark reddish coloured tiger is sitting on the ground")
-text_inputs=("a dark reddish coloured tiger is jumping, legs are up in the air")
+text_inputs=("a dark reddish coloured tiger is sitting on the ground")
+# text_inputs=("a dark reddish coloured tiger is jumping, legs are up in the air")
 
 # Loop through the text inputs
 for text in "${text_inputs[@]}"; do
