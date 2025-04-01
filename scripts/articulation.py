@@ -70,10 +70,10 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
     if type(prompt)!=list:
         prompt = [prompt]
     
-    os.makedirs(f"outputs/{animal_name}_seed{seed}_{current_time}/", exist_ok=True)
-    os.makedirs(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{seed}/", exist_ok=True)
-    os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{seed}/reconstruction/", exist_ok=True)
-    os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", exist_ok=True)
+    os.makedirs(f"{args.folder_path_save}/outputs/{animal_name}_seed{seed}_{current_time}/", exist_ok=True)
+    os.makedirs(f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{seed}/", exist_ok=True)
+    os.makedirs(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{seed}/reconstruction/", exist_ok=True)
+    os.makedirs(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", exist_ok=True)
 
     with torch.no_grad(), torch.autocast(device_type=device, dtype=dtype):
         ### prepare conditions
@@ -95,7 +95,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
         shape = [num_frames//2, image_size // 8, image_size // 8] # [4, 32, 32]
 
         ### load saved trajectory
-        asset = f"assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{inversion_seed}.torch"
+        asset = f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{inversion_seed}.torch"
         sampler.make_schedule(ddim_num_steps=step, ddim_eta=0)
 
         cached_trajectory = torch.load(asset)   
@@ -103,10 +103,10 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
             cached_trajectory = cached_trajectory[::-1] 
         # now cached_trajectory is from noisiest to cleanest
             
-        os.makedirs(f"outputs/{animal_name}/ddim_depth_{ddim_depth}", exist_ok=True)
+        os.makedirs(f"{args.folder_path_save}/outputs/{animal_name}/ddim_depth_{ddim_depth}", exist_ok=True)
         # x_T = sampler.stochastic_encode(cached_trajectory[0], torch.tensor([20]).to(device))
         x_T = cached_trajectory[ddim_depth].to(device)
-        visualize(model, x_T, f"outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_t2i-starting-point.png")
+        visualize(model, x_T, f"{args.folder_path_save}/outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_t2i-starting-point.png")
 
         ### denoise with supervision from reference frame through rewired self-attention
         samples_ddim, intermediates = sampler.sample(S=step, conditioning=c_,
@@ -125,13 +125,13 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
             mse = F.mse_loss(model.decode_first_stage(target), model.decode_first_stage(x_t[1::2])).item()
             mse_pred_x0.append(mse)
             if t == 50:
-                visualize(model, x_t, f"outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_pred_x0_t={t:03d}.png")
+                visualize(model, x_t, f"{args.folder_path_save}/outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_pred_x0_t={t:03d}.png")
         
         for t, x_t in enumerate(intermediates["x_inter"]):
             mse = F.mse_loss(model.decode_first_stage(target), model.decode_first_stage(x_t[1::2])).item()
             mse_x_inter.append(mse)
             if t == 50:
-                visualize(model, x_t, f"outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_x_inter_t={t:03d}.png")
+                visualize(model, x_t, f"{args.folder_path_save}/outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_x_inter_t={t:03d}.png")
         
         plt.figure(figsize=(10, 5))
         plt.plot(mse_pred_x0, label='pred_x0')
@@ -140,11 +140,11 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
         plt.ylabel('MSE')
         plt.legend()
         plt.title(f'MSE between reference frame and articulation (ddim_depth={ddim_depth})')
-        plt.savefig(f"outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_mse_plot.png")
+        plt.savefig(f"{args.folder_path_save}/outputs/{animal_name}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_mse_plot.png")
         plt.close()
         
-        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", f"outputs/{animal_name}_seed{seed}_{current_time}/forward_articulation_x_inter_{animal_name}_seed{seed}.gif", startswith="x_inter")
-        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", f"outputs/{animal_name}_seed{seed}_{current_time}/forward_articulation_pred_x0_{animal_name}_seed{seed}.gif", startswith="pred_x0")
+        pngs_to_gif(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", f"{args.folder_path_save}/outputs/{animal_name}_seed{seed}_{current_time}/forward_articulation_x_inter_{animal_name}_seed{seed}.gif", startswith="x_inter")
+        pngs_to_gif(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{seed}/articulation/", f"{args.folder_path_save}/outputs/{animal_name}_seed{seed}_{current_time}/forward_articulation_pred_x0_{animal_name}_seed{seed}.gif", startswith="pred_x0")
         
         x_sample = model.decode_first_stage(samples_ddim)
         x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
@@ -198,12 +198,12 @@ def run_forward_inference(args):
                   step=args.step, scale=10, batch_size=batch_size, ddim_eta=0.0, dtype=dtype, device=device, 
                   camera=camera, num_frames=args.num_frames, ddim_depth=args.ddim_depth)
         for i, im in enumerate(img):
-            Image.fromarray(im).save(f"outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample_{i}.png")
+            Image.fromarray(im).save(f"{args.folder_path_save}/outputs/{args.animal_name}_seed{args.seed}_{current_time}/sample_{i}.png")
             if i % 2 == 0:
                 input_images.append(im)
             else:
                 target_images.append(im)
-                Image.fromarray(im).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/{args.animal_name}_ddim_depth_{args.ddim_depth}_f1v{i//2}.png")
+                Image.fromarray(im).save(f"{args.folder_path_save}/outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/{args.animal_name}_ddim_depth_{args.ddim_depth}_f1v{i//2}.png")
         img = np.concatenate(img, 1)
         all_img_input_target.append(img)
     
@@ -212,21 +212,21 @@ def run_forward_inference(args):
     
     all_img_input_target = np.concatenate(all_img_input_target, 0)
 
-    Image.fromarray(all_img_input_target).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_sample.png")
+    Image.fromarray(all_img_input_target).save(f"{args.folder_path_save}/outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_sample.png")
     
     # Save all input images together
     input_images_concat = np.concatenate(input_images, axis=1)
-    Image.fromarray(input_images_concat).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_input_images.png")
+    Image.fromarray(input_images_concat).save(f"{args.folder_path_save}/outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_input_images.png")
     
     # Save all target images together
     target_images_concat = np.concatenate(target_images, axis=1)
-    Image.fromarray(target_images_concat).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_target_images.png")
+    Image.fromarray(target_images_concat).save(f"{args.folder_path_save}/outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_target_images.png")
     
     # Save input and target images together vertically
     input_target_images_concat = np.concatenate((input_images_concat, target_images_concat), axis=0)
-    Image.fromarray(input_target_images_concat).save(f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_input_target_images_combined.png")
+    Image.fromarray(input_target_images_concat).save(f"{args.folder_path_save}/outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_input_target_images_combined.png")
     
-    args.save_json = f"outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_articulation_args.json"
+    args.save_json = f"{args.folder_path_save}/outputs/{args.animal_name}/ddim_depth_{args.ddim_depth}/ddim_depth_{args.ddim_depth}_articulation_args.json"
     with open(args.save_json, 'w+') as f:
         json.dump(vars(args), f, indent=4)
         
@@ -264,12 +264,15 @@ def run_ddim_depth_ablation(args):
     # Dictionary to store metrics for each depth
     depth_metrics = {}
     
+    # for_loop
     # Try different DDIM depths
-    for ddim_depth in range(5, 50, 5):
+    for ddim_depth in range(20, 50, 10):
+    # for ddim_depth in range(5, 50, 5):
         print(f"\nTesting DDIM depth: {ddim_depth}")
         
         # Create directories for this depth
-        os.makedirs(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}", exist_ok=True)
+        ddim_depth_folder = f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}"
+        os.makedirs(ddim_depth_folder, exist_ok=True)
         
         # Run generation with current depth
         t = args.text + args.suffix
@@ -288,18 +291,24 @@ def run_ddim_depth_ablation(args):
         target_images = []
         
         for i, im in enumerate(img):
-            Image.fromarray(im).save(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}/sample_{i}.png")
+            Image.fromarray(im).save(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}/sample_{i}.png")
             if i % 2 == 0:
                 input_images.append(im)
             else:
                 target_images.append(im)
         
+        
         # Save combined visualizations
         input_images_concat = np.concatenate(input_images, axis=1)
         target_images_concat = np.concatenate(target_images, axis=1)
-        Image.fromarray(input_images_concat).save(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}/input_images.png")
-        Image.fromarray(target_images_concat).save(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}/target_images.png")
         
+        # Save input and target images individually
+        Image.fromarray(input_images_concat).save(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}/input_images.png")
+        Image.fromarray(target_images_concat).save(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}/target_images.png")
+        
+        input_target_combined = np.concatenate((input_images_concat, target_images_concat), axis=0)
+        Image.fromarray(input_target_combined).save(os.path.join(ddim_depth_folder, "input_target_combined.png"))
+
         # Calculate metrics for curve comparison
         def calculate_curve_metrics(pred_x0_vals, x_inter_vals):
             # Convert to numpy arrays for easier calculation
@@ -322,7 +331,7 @@ def run_ddim_depth_ablation(args):
         depth_metrics[ddim_depth] = metrics
         print(depth_metrics)
         
-        with open(f"ablations/{args.animal_name}/ddim_depth_{ddim_depth}/metrics.json", 'w') as f:
+        with open(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}/metrics.json", 'w') as f:
             json.dump({
                 'mse_pred_x0': numpy_to_python(mse_pred_x0),
                 'mse_x_inter': numpy_to_python(mse_x_inter),
@@ -379,7 +388,7 @@ def run_ddim_depth_ablation(args):
             }
         }
     }
-    with open(f"ablations/{args.animal_name}/ddim_depth_analysis.json", 'w') as f:
+    with open(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_analysis.json", 'w') as f:
         json.dump(analysis_results, f, indent=4)
     
     print(f"\nOptimal DDIM depth selected: {optimal_depth}")
@@ -389,7 +398,7 @@ def run_ddim_depth_ablation(args):
 
 def run_rewire_switch_ablation(args):
     """Run ablation study for different rewire switch configurations"""
-    base_output_dir = f"outputs/{args.animal_name}/rewire_switch"
+    base_output_dir = f"{args.folder_path_save}/outputs/{args.animal_name}/rewire_switch"
     os.makedirs(base_output_dir, exist_ok=True)
     
     # Run 16 iterations with different rewire configurations
@@ -458,13 +467,13 @@ def run_rewire_switch_ablation(args):
             else:
                 target_images.append(img)
 
+        Image.fromarray(input_images_concat).save(os.path.join(iteration_dir, "input_images.png"))
+        Image.fromarray(target_images_concat).save(os.path.join(iteration_dir, "target_images.png"))
+
         # Save combined visualizations
         input_images_concat = np.concatenate(input_images, axis=1)
         target_images_concat = np.concatenate(target_images, axis=1)
         input_target_combined = np.concatenate((input_images_concat, target_images_concat), axis=0)
-        
-        Image.fromarray(input_images_concat).save(os.path.join(iteration_dir, "input_images.png"))
-        Image.fromarray(target_images_concat).save(os.path.join(iteration_dir, "target_images.png"))
         Image.fromarray(input_target_combined).save(os.path.join(iteration_dir, "input_target_combined.png"))
 
 
@@ -491,14 +500,16 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
                         choices=available_animal_assets)
-    parser.add_argument("--run_ddim_depth_ablation", action="store_true")
+    parser.add_argument("--run_ddim_depth_ablation", default="true")  # action="store_true")   # default="False") 
     parser.add_argument("--run_rewire_switch_ablation", action="store_true")
+    parser.add_argument("--folder_path_save", type=str, default="/work/oishideb/MVDream_results", help="folder_path")
     args = parser.parse_args()
 
     if args.run_ddim_depth_ablation:
         optimal_depth = run_ddim_depth_ablation(args)
+        args.ddim_depth = optimal_depth
     if args.run_rewire_switch_ablation:
         run_rewire_switch_ablation(args)
     
-    args.ddim_depth = optimal_depth
+    # args.ddim_depth = optimal_depth
     run_forward_inference(args)

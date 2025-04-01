@@ -1,3 +1,4 @@
+import time
 import os
 import json
 import random
@@ -52,10 +53,10 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             c_["num_frames"] = uc_["num_frames"] = num_frames
         shape = [args.num_frames//2, image_size // 8, image_size // 8] # [4, 32, 32]
 
-        os.makedirs(f"outputs/{animal_name}_seed{args.seed}/", exist_ok=True)
-        os.makedirs(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/", exist_ok=True)
-        os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", exist_ok=True)
-        os.makedirs(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", exist_ok=True)
+        os.makedirs(f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/", exist_ok=True)
+        os.makedirs(f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/", exist_ok=True)
+        os.makedirs(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", exist_ok=True)
+        os.makedirs(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/articulation/", exist_ok=True)
         
         x = []
         azimuthal_interval = 360 // (args.num_frames//2)
@@ -101,9 +102,9 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
             x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
             x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
-            Image.fromarray(x_sample).save(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/x_inter_t={t:03d}.png")
-        pngs_to_gif(f"assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/", f"outputs/{animal_name}_seed{args.seed}/ddim_inv_trajectory_of_renderings_{animal_name}_seed{args.seed}.gif")
-        asset = f"assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{args.seed}.torch"
+            Image.fromarray(x_sample).save(f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/x_inter_t={t:03d}.png")
+        pngs_to_gif(f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/{animal_name}_seed{args.seed}/", f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/ddim_inv_trajectory_of_renderings_{animal_name}_seed{args.seed}.gif")
+        asset = f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{args.seed}.torch"
         torch.save(intermediates_inversion["x_inter"], asset)
 
         x_T = intermediates_inversion["x_inter"][25].to(device)
@@ -117,7 +118,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
                                         eta=ddim_eta, x_T=x_T,
                                         start_time_step=0,)
         
-        output_dir = f"outputs/{animal_name}_seed{args.seed}/"
+        output_dir = f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/"
         csv_path = os.path.join(output_dir, "mse.csv")
         if not os.path.exists(csv_path):
             with open(csv_path, 'w') as f:
@@ -136,15 +137,15 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
             x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
             x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
-            Image.fromarray(x_sample).save(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/pred_x0_t={t:03d}.png")
+            Image.fromarray(x_sample).save(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/pred_x0_t={t:03d}.png")
         for t, x_t in enumerate(intermediates["x_inter"]):
             x_sample = model.decode_first_stage(x_t)
             x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
             x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
             x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
-            Image.fromarray(x_sample).save(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/x_inter_t={t:03d}.png")
-        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", f"outputs/{animal_name}_seed{args.seed}/forward_reconstruction_x_inter_{animal_name}_seed{args.seed}.gif", startswith="x_inter")
-        pngs_to_gif(f"forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", f"outputs/{animal_name}_seed{args.seed}/forward_reconstruction_pred_x0_{animal_name}_seed{args.seed}.gif", startswith="pred_x0")
+            Image.fromarray(x_sample).save(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/x_inter_t={t:03d}.png")
+        pngs_to_gif(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/forward_reconstruction_x_inter_{animal_name}_seed{args.seed}.gif", startswith="x_inter")
+        pngs_to_gif(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/forward_reconstruction_pred_x0_{animal_name}_seed{args.seed}.gif", startswith="pred_x0")
         x_sample = model.decode_first_stage(samples_ddim)
         x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
         x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
@@ -161,8 +162,8 @@ if __name__ == "__main__":
     parser.add_argument("--text", type=str, default="a brown horse standing still, legs straight")
     parser.add_argument("--suffix", type=str, default=", 3d asset")
     parser.add_argument("--size", type=int, default=256)
-    parser.add_argument("--step", type=int, default=50)
-    parser.add_argument("--start_time_step", type=int, default=35, help="DDIM inversion start time step")
+    parser.add_argument("--step", type=int, default=50)              # Keep it 50 IMPORTANT
+    parser.add_argument("--start_time_step", type=int, default=30, help="DDIM inversion start time step")
     parser.add_argument("--num_frames", type=int, default=8, help="num of frames (views) to generate")
     parser.add_argument("--num_rows", type=int, default=1, help="number of rows to generate")
     parser.add_argument("--use_camera", type=int, default=1)
@@ -172,14 +173,15 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=2025)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
+    parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2",
                         choices=available_animal_assets)
+    parser.add_argument("--folder_path_save", type=str, default="/work/oishideb/MVDream_results", help="folder_path")
     args = parser.parse_args()
 
     dtype = torch.float16 if args.fp16 else torch.float32
     device = args.device
     batch_size = args.num_frames
-
+    
     print("load t2i model ... ")
     if args.config_path is None:
         model = build_model(args.model_name, ckpt_path=args.ckpt_path)
@@ -208,6 +210,8 @@ if __name__ == "__main__":
     else:
         camera = None
     
+    start_time = time.time()
+    
     t = args.text + args.suffix
     set_seed(args.seed)
     images = []
@@ -215,12 +219,17 @@ if __name__ == "__main__":
         img = t2i(model, args.size, t, uc, sampler, args.animal_name, step=args.step, scale=10, batch_size=batch_size, ddim_eta=0.0, 
                 dtype=dtype, device=device, camera=camera, num_frames=args.num_frames, start_time_step=args.start_time_step)
         # for i, im in enumerate(img):
-        #     Image.fromarray(im).save(f"outputs/{args.animal_name}_seed{args.seed}/sample_{i}.png")
+        #     Image.fromarray(im).save(f"{args.folder_path_save}/outputs/{args.animal_name}_seed{args.seed}/sample_{i}.png")
         img = np.concatenate(img, 1)
         images.append(img)
+    
+    
+    end_time = time.time()  # Record the end time 
+    print(f"DDIM Inversion took {end_time - start_time} seconds to run.")
+    
     images = np.concatenate(images, 0)
-    Image.fromarray(images).save(f"outputs/{args.animal_name}_seed{args.seed}/reconstruction.png")
+    Image.fromarray(images).save(f"{args.folder_path_save}/outputs/{args.animal_name}_seed{args.seed}/reconstruction.png")
 
-    args.save_json = f"outputs/{args.animal_name}_seed{args.seed}/inversion_args.json"
+    args.save_json = f"{args.folder_path_save}/outputs/{args.animal_name}_seed{args.seed}/inversion_args.json"
     with open(args.save_json, 'w+') as f:
         json.dump(vars(args), f, indent=4)
