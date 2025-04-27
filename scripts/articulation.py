@@ -500,7 +500,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
                         choices=available_animal_assets)
-    parser.add_argument("--run_ddim_depth_ablation", default="true")  # action="store_true")   # default="False") 
+    parser.add_argument("--run_ddim_depth_ablation", default="False")
     parser.add_argument("--run_rewire_switch_ablation", action="store_true")
     parser.add_argument("--folder_path_save", type=str, default="/work/oishideb/MVDream_results", help="folder_path")
     args = parser.parse_args()
