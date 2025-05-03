@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Call the ddim_inversion.py function with the first text input
-ddim_inversion_command="python scripts/ddim_inversion.py --seed 2025 --text 'a tiger is standing still' --animal_name tiger_8_views_rest --num_frames 16 --camera_azim 135"
+ddim_inversion_command="python scripts/ddim_inversion.py --seed 2025 --text 'an orange tiger is standing still' --animal_name tiger_8_views_rest --num_frames 16 --camera_azim 135"
 echo "Running ddim_inversion command: $ddim_inversion_command"
 eval $ddim_inversion_command
 

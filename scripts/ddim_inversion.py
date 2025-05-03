@@ -1,5 +1,10 @@
 import time
-import os
+import os, sys
+sys.path = [p for p in sys.path if "MVDream" not in p]
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, os.path.join(current_dir, ".."))
+
 import json
 import random
 import argparse
@@ -87,6 +92,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             x_T = x_T.repeat(repeater, 1, 1, 1)      # ABCDABCD
             
         print(x_T.shape, c_["context"].shape, uc_["context"].shape, shape, batch_size)
+        # torch.Size([n_frames, 4, 32, 32]) torch.Size([n_frames, 77, 1024]) torch.Size([n_frames, 77, 1024]) [n_frames//2, 32, 32] n_frames
         samples, intermediates_inversion = sampler.sample_inversion(S=step, conditioning=c_,
                                     batch_size=batch_size, shape=shape,
                                     verbose=False, 
@@ -147,6 +153,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
         pngs_to_gif(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/forward_reconstruction_x_inter_{animal_name}_seed{args.seed}.gif", startswith="x_inter")
         pngs_to_gif(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/forward_reconstruction_pred_x0_{animal_name}_seed{args.seed}.gif", startswith="pred_x0")
         x_sample = model.decode_first_stage(samples_ddim)
+        x_sample[::2] = x # replace the first frame by the original image
         x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
         x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
 
@@ -175,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2",
                         choices=available_animal_assets)
-    parser.add_argument("--folder_path_save", type=str, default="/work/oishideb/MVDream_results", help="folder_path")
+    parser.add_argument("--folder_path_save", type=str, default="../results", help="folder_path")
     args = parser.parse_args()
 
     dtype = torch.float16 if args.fp16 else torch.float32
