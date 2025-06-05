@@ -271,7 +271,7 @@ def run_ddim_depth_ablation(args):
         print(f"\nTesting DDIM depth: {ddim_depth}")
         
         # Create directories for this depth
-        ddim_depth_folder = f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}"
+        ddim_depth_folder = f"{args.folder_path_save}/ablations_ddim_depth/{args.animal_name}/ddim_depth_{ddim_depth}"
         os.makedirs(ddim_depth_folder, exist_ok=True)
         
         # Run generation with current depth
@@ -291,7 +291,7 @@ def run_ddim_depth_ablation(args):
         target_images = []
         
         for i, im in enumerate(img):
-            Image.fromarray(im).save(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}/sample_{i}.png")
+            Image.fromarray(im).save(f"{args.folder_path_save}/ablations_ddim_depth/{args.animal_name}/ddim_depth_{ddim_depth}/sample_{i}.png")
             if i % 2 == 0:
                 input_images.append(im)
             else:
@@ -303,8 +303,8 @@ def run_ddim_depth_ablation(args):
         target_images_concat = np.concatenate(target_images, axis=1)
         
         # Save input and target images individually
-        Image.fromarray(input_images_concat).save(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}/input_images.png")
-        Image.fromarray(target_images_concat).save(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}/target_images.png")
+        Image.fromarray(input_images_concat).save(f"{args.folder_path_save}/ablations_ddim_depth/{args.animal_name}/ddim_depth_{ddim_depth}/input_images.png")
+        Image.fromarray(target_images_concat).save(f"{args.folder_path_save}/ablations_ddim_depth/{args.animal_name}/ddim_depth_{ddim_depth}/target_images.png")
         
         input_target_combined = np.concatenate((input_images_concat, target_images_concat), axis=0)
         Image.fromarray(input_target_combined).save(os.path.join(ddim_depth_folder, "input_target_combined.png"))
@@ -331,7 +331,7 @@ def run_ddim_depth_ablation(args):
         depth_metrics[ddim_depth] = metrics
         print(depth_metrics)
         
-        with open(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_{ddim_depth}/metrics.json", 'w') as f:
+        with open(f"{args.folder_path_save}/ablations_ddim_depth/{args.animal_name}/ddim_depth_{ddim_depth}/metrics.json", 'w') as f:
             json.dump({
                 'mse_pred_x0': numpy_to_python(mse_pred_x0),
                 'mse_x_inter': numpy_to_python(mse_x_inter),
@@ -388,17 +388,17 @@ def run_ddim_depth_ablation(args):
             }
         }
     }
-    with open(f"{args.folder_path_save}/ablations/{args.animal_name}/ddim_depth_analysis.json", 'w') as f:
+    with open(f"{args.folder_path_save}/ablations_ddim_depth/{args.animal_name}/ddim_depth_analysis.json", 'w') as f:
         json.dump(analysis_results, f, indent=4)
     
     print(f"\nOptimal DDIM depth selected: {optimal_depth}")
-    print(f"Analysis results saved to: ablations/{args.animal_name}/ddim_depth_analysis.json")
+    print(f"Analysis results saved to: ablations_ddim_depth/{args.animal_name}/ddim_depth_analysis.json")
     
     return optimal_depth
 
 def run_rewire_switch_ablation(args):
     """Run ablation study for different rewire switch configurations"""
-    base_output_dir = f"{args.folder_path_save}/outputs/{args.animal_name}/rewire_switch"
+    base_output_dir = f"{args.folder_path_save}/ablations_rewire_switch/{args.animal_name}_wings_up"
     os.makedirs(base_output_dir, exist_ok=True)
     
     # Run 16 iterations with different rewire configurations
@@ -467,14 +467,14 @@ def run_rewire_switch_ablation(args):
             else:
                 target_images.append(img)
 
-        Image.fromarray(input_images_concat).save(os.path.join(iteration_dir, "input_images.png"))
-        Image.fromarray(target_images_concat).save(os.path.join(iteration_dir, "target_images.png"))
-
         # Save combined visualizations
         input_images_concat = np.concatenate(input_images, axis=1)
         target_images_concat = np.concatenate(target_images, axis=1)
         input_target_combined = np.concatenate((input_images_concat, target_images_concat), axis=0)
         Image.fromarray(input_target_combined).save(os.path.join(iteration_dir, "input_target_combined.png"))
+        
+        Image.fromarray(input_images_concat).save(os.path.join(iteration_dir, "input_images.png"))
+        Image.fromarray(target_images_concat).save(os.path.join(iteration_dir, "target_images.png"))
 
 
 if __name__ == "__main__":
@@ -500,8 +500,8 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
                         choices=available_animal_assets)
-    parser.add_argument("--run_ddim_depth_ablation", default="False")
-    parser.add_argument("--run_rewire_switch_ablation", action="store_true")
+    parser.add_argument("--run_ddim_depth_ablation", default="True")
+    parser.add_argument("--run_rewire_switch_ablation", default="False")
     parser.add_argument("--folder_path_save", type=str, default="/work/oishideb/MVDream_results", help="folder_path")
     args = parser.parse_args()
 
