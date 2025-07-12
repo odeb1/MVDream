@@ -1,5 +1,10 @@
 import time
-import os
+import os, sys
+sys.path = [p for p in sys.path if "MVDream" not in p]
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, os.path.join(current_dir, ".."))
+
 import json
 import random
 import argparse
@@ -34,8 +39,9 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
         step=20, scale=7.5, batch_size=8, ddim_eta=0., dtype=torch.float32, 
         device="cuda", camera=None, num_frames=1, start_time_step=35):
 
+    import ipdb; ipdb.set_trace()
     with torch.no_grad(), torch.autocast(device_type=device, dtype=dtype):
-        # prompt = "a pig standing straight, legs straight, animal, 3d asset"
+        # prompt = "a tiger standing straight, legs straight, animal, 3d asset"
         # prompt = "a brown sheep, myanmar, nyilonelycompany, standing straight, legs straight, white face, fluffy, 3d asset"
         # prompt = "a cow standing, 3D asset"
         # prompt = "a gray horse, dark mane on back of its neck, dark tail, standing straight, 3d asset"
@@ -43,14 +49,24 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
 
         c0 = model.get_learned_conditioning(prompt).to(device)
         c1 = model.get_learned_conditioning(prompt).to(device)
+        # The two embeddings are concatenated and then repeated to match the batch_size. 
+        # The division by 2 suggests that two prompt embeddings are used per pair of items in the batch.
         c_ = {"context": torch.cat([c0, c1]).repeat(batch_size//2,1,1)}
         ##### for vf, context in enumerate(c_["context"]):  print(vf, context.shape, context[4:16])
         # uc = model.get_learned_conditioning("resting, wings tucked in, wings folded tightly against its sides").to(device)
         uc = model.get_learned_conditioning("").to(device)
         uc_ = {"context": uc.repeat(batch_size,1,1)}
+        
+        # if camera data exists, this code adds it to both the conditional (c_) and unconditional (uc_) context dictionaries.
+        # The model needs to know the viewpoint for every step of the diffusion process. By providing the camera data to both contexts, 
+        # we ensure the spatial information is always available, whether the model is referring to the text prompt or not.
         if camera is not None:
             c_["camera"] = uc_["camera"] = camera
             c_["num_frames"] = uc_["num_frames"] = num_frames
+        
+        # Defines a list "shape" of the latent space tensor. image_size // 8 is common because many diffusion models 
+        # (like Stable Diffusion) use an autoencoder (VAE) that downsamples the image by a factor of 8. 
+        # args.num_frames//2 suggests the number of distinct views being processed in this latent batch.
         shape = [args.num_frames//2, image_size // 8, image_size // 8] # [4, 32, 32]
 
         os.makedirs(f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/", exist_ok=True)
@@ -73,11 +89,14 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             image = TF.adjust_hue(image, hue)
 
             x.append(to_tensor(image))
-            
+        
+        # Normalizes pixel values from [0, 1] to [-1, 1]
         x = torch.stack(x).to(device) * 2.0 - 1.0
         x = F.interpolate(x, (256, 256))
         
+        # VAE encoder
         x_T = model.encode_first_stage(x).mean #.sample() # DiagonalGaussianDistribution
+        # Normalising the output (latent distribution) from the VAE encoder
         x_T = x_T * 0.18215 # IMPORTANT!!
 
         if FORMAT_INTERLEAVED:
@@ -87,6 +106,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             x_T = x_T.repeat(repeater, 1, 1, 1)      # ABCDABCD
             
         print(x_T.shape, c_["context"].shape, uc_["context"].shape, shape, batch_size)
+        # torch.Size([n_frames, 4, 32, 32]) torch.Size([n_frames, 77, 1024]) torch.Size([n_frames, 77, 1024]) [n_frames//2, 32, 32] n_frames
         samples, intermediates_inversion = sampler.sample_inversion(S=step, conditioning=c_,
                                     batch_size=batch_size, shape=shape,
                                     verbose=False, 
@@ -147,6 +167,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
         pngs_to_gif(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/forward_reconstruction_x_inter_{animal_name}_seed{args.seed}.gif", startswith="x_inter")
         pngs_to_gif(f"{args.folder_path_save}/forward_cache_artefacts/{animal_name}_seed{args.seed}/reconstruction/", f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/forward_reconstruction_pred_x0_{animal_name}_seed{args.seed}.gif", startswith="pred_x0")
         x_sample = model.decode_first_stage(samples_ddim)
+        x_sample[::2] = x # replace the first frame by the original image
         x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
         x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
 
@@ -175,7 +196,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2",
                         choices=available_animal_assets)
-    parser.add_argument("--folder_path_save", type=str, default="/work/oishideb/MVDream_results", help="folder_path")
+    parser.add_argument("--folder_path_save", type=str, default="../results", help="folder_path")
     args = parser.parse_args()
 
     dtype = torch.float16 if args.fp16 else torch.float32
