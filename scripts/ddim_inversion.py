@@ -135,13 +135,13 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
 
         noise_diff_norm = [d.norm(p=2) for d in [(tn - un) for tn, un in zip(intermediates_inversion["model_t"], intermediates_inversion["model_uncond"])]]
         noise_diff_norm = torch.stack(noise_diff_norm, dim=0).cpu().numpy()
-        print("Noise diff norms", noise_diff_norm.shape)
+        print("Inversion - Noise Diff Norms", noise_diff_norm.shape)
         plt.figure(figsize=(10, 6))
         steps = list(reversed(range(len(noise_diff_norm))))
         plt.plot(steps, noise_diff_norm, 'b-', linewidth=2)
         plt.xlabel('DDIM Step')
         plt.ylabel('Noise Diff Norm')
-        plt.title(f'Noise Difference Norm vs DDIM Step - {animal_name}')
+        plt.title(f'Inversion - Noise Difference Norm vs DDIM Step - {animal_name}')
         plt.grid(True, alpha=0.3)
         plt.savefig(f"{output_dir}/noise_diff_norm_inver.png", dpi=150, bbox_inches='tight')
         plt.close()
@@ -161,13 +161,13 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
 
         noise_diff_norm = [d.norm(p=2) for d in [(tn - un) for tn, un in zip(intermediates["model_t"], intermediates["model_uncond"])]]
         noise_diff_norm = torch.stack(noise_diff_norm, dim=0).cpu().numpy()
-        print("Noise diff norms", noise_diff_norm.shape)
+        print("Reconstruction - Noise Diff Norms", noise_diff_norm.shape)
         plt.figure(figsize=(10, 6))
         steps = list(range(len(noise_diff_norm)))
         plt.plot(steps, noise_diff_norm, 'b-', linewidth=2)
         plt.xlabel('DDIM Step')
         plt.ylabel('Noise Diff Norm')
-        plt.title(f'Noise Difference Norm vs DDIM Step - {animal_name}')
+        plt.title(f'Reconstruction - Noise Difference Norm vs DDIM Step - {animal_name}')
         plt.grid(True, alpha=0.3)
         plt.savefig(f"{output_dir}/noise_diff_norm_recon.png", dpi=150, bbox_inches='tight')
         plt.close()

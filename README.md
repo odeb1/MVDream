@@ -14,7 +14,10 @@ Please make sure that `xformers` are NOT installed.
 
 ``` bash
 python scripts/ddim_inversion.py --seed 2222 --text "a tiger standing still" --animal_name tiger_8_views_rest --num_frames 16
+python scripts/ddim_inversion.py --seed 2222 --text "a hummingbird resting" --animal_name humming_8_views --num_frames 16 
+python scripts/ddim_inversion.py --seed 2222 --text "a giraffe standing still" --animal_name giraffe --num_frames 8
 
-python scripts/articulation.py --seed 2222 --inversion_seed 2222 --text "a tiger running, four legs off ground" --animal_name tiger_8_views_rest --num_frames 16
-
+python scripts/articulation.py --seed 2222 --inversion_seed 2222 --text "a tiger running, four legs off ground" --animal_name tiger_8_views_rest --num_frames 16 --run_ddim_depth_ablation
+python scripts/articulation.py --seed 2222 --inversion_seed 2222 --text "a hummingbird flapping wings, flying" --animal_name humming_8_views --num_frames 16 --run_ddim_depth_ablation
+python scripts/articulation.py --seed 2222 --inversion_seed 2222 --text "a giraffe running, four legs off ground" --animal_name giraffe --num_frames 8 --run_ddim_depth_ablation
 ```

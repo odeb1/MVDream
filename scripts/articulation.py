@@ -117,7 +117,21 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
                                         eta=ddim_eta, x_T=x_T,
                                         start_time_step=0,
                                         cached_trajectory=asset)
-        
+        output_dir = f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}_{current_time}/ddim_depth_{ddim_depth}/"
+        noise_diff_norm = [d.norm(p=2) for d in [(tn - un) for tn, un in zip(intermediates["model_t"], intermediates["model_uncond"])]]
+        noise_diff_norm = torch.stack(noise_diff_norm, dim=0).cpu().numpy()
+        print("Articulation - Noise Diff Norms", noise_diff_norm.shape)
+        plt.figure(figsize=(10, 6))
+        steps = list(range(len(noise_diff_norm)))
+        plt.plot(steps, noise_diff_norm, 'b-', linewidth=2)
+        plt.xlabel('DDIM Step')
+        plt.ylabel('Noise Diff Norm')
+        plt.title(f'Articulation - DDIM_Depth_{ddim_depth} - Noise Difference Norm vs DDIM Step - {animal_name}')
+        plt.grid(True, alpha=0.3)
+        plt.savefig(f"{output_dir}/noise_diff_norm_recon.png", dpi=150, bbox_inches='tight')
+        plt.close()
+        print("Reconstruction Noise Diff Norm plot saved at:", os.path.join(output_dir, f"ddim_depth_{ddim_depth}_noise_diff_norm_artic.png"))
+
         mse_pred_x0 = []
         mse_x_inter = []
         target = intermediates["pred_x0"][-1][0::2]
@@ -270,8 +284,7 @@ def run_ddim_depth_ablation(args):
     
     # for_loop
     # Try different DDIM depths
-    for ddim_depth in range(20, 50, 10):
-    # for ddim_depth in range(5, 50, 5):
+    for ddim_depth in range(5, 50, 5):
         print(f"\nTesting DDIM depth: {ddim_depth}")
         
         # Create directories for this depth
