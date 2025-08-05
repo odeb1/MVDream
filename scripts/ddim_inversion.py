@@ -8,18 +8,21 @@ if current_dir not in sys.path:
 import json
 import random
 import argparse
-from PIL import Image
 import numpy as np
+from PIL import Image
+from tqdm import tqdm
 from omegaconf import OmegaConf
+import matplotlib.pyplot as plt
+
 import torch 
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
-from tqdm import tqdm
+from torchvision.transforms.functional import to_tensor
+
 from mvdream.camera_utils import get_camera
 from mvdream.ldm.util import instantiate_from_config
 from mvdream.ldm.models.diffusion.ddim import DDIMSampler
 from mvdream.model_zoo import build_model
-from torchvision.transforms.functional import to_tensor
 from pngs2gif import pngs_to_gif
 
 FORMAT_INTERLEAVED = True
@@ -39,7 +42,10 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
         step=20, scale=7.5, batch_size=8, ddim_eta=0., dtype=torch.float32, 
         device="cuda", camera=None, num_frames=1, start_time_step=35):
 
-    import ipdb; ipdb.set_trace()
+    output_dir = f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # import ipdb; ipdb.set_trace()
     with torch.no_grad(), torch.autocast(device_type=device, dtype=dtype):
         # prompt = "a tiger standing straight, legs straight, animal, 3d asset"
         # prompt = "a brown sheep, myanmar, nyilonelycompany, standing straight, legs straight, white face, fluffy, 3d asset"
@@ -86,7 +92,7 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
             image = TF.adjust_brightness(image, brightness)
             image = TF.adjust_contrast(image, contrast)
             image = TF.adjust_saturation(image, saturation)
-            image = TF.adjust_hue(image, hue)
+            # image = TF.adjust_hue(image, hue)
 
             x.append(to_tensor(image))
         
@@ -127,6 +133,21 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
         asset = f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{args.seed}.torch"
         torch.save(intermediates_inversion["x_inter"], asset)
 
+        noise_diff_norm = [d.norm(p=2) for d in [(tn - un) for tn, un in zip(intermediates_inversion["model_t"], intermediates_inversion["model_uncond"])]]
+        noise_diff_norm = torch.stack(noise_diff_norm, dim=0).cpu().numpy()
+        print("Noise diff norms", noise_diff_norm.shape)
+        plt.figure(figsize=(10, 6))
+        steps = list(reversed(range(len(noise_diff_norm))))
+        plt.plot(steps, noise_diff_norm, 'b-', linewidth=2)
+        plt.xlabel('DDIM Step')
+        plt.ylabel('Noise Diff Norm')
+        plt.title(f'Noise Difference Norm vs DDIM Step - {animal_name}')
+        plt.grid(True, alpha=0.3)
+        plt.savefig(f"{output_dir}/noise_diff_norm_inver.png", dpi=150, bbox_inches='tight')
+        plt.close()
+        print("Inversion Noise Diff Norm plot saved at:", os.path.join(output_dir, "noise_diff_norm_inver.png"))
+
+
         x_T = intermediates_inversion["x_inter"][25].to(device)
         # x_T = sampler.stochastic_encode(intermediates_inversion["x_inter"][0], torch.tensor([25]).to(device))
         # x_T[1::2] = torch.randn_like(x_T_resampled[1::2])
@@ -137,22 +158,34 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name,
                                         unconditional_conditioning=uc_,
                                         eta=ddim_eta, x_T=x_T,
                                         start_time_step=0,)
-        
-        output_dir = f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}/"
-        csv_path = os.path.join(output_dir, "mse.csv")
-        if not os.path.exists(csv_path):
-            with open(csv_path, 'w') as f:
-                f.write("t, mse_x_t, mse_x_sample\n")
+
+        noise_diff_norm = [d.norm(p=2) for d in [(tn - un) for tn, un in zip(intermediates["model_t"], intermediates["model_uncond"])]]
+        noise_diff_norm = torch.stack(noise_diff_norm, dim=0).cpu().numpy()
+        print("Noise diff norms", noise_diff_norm.shape)
+        plt.figure(figsize=(10, 6))
+        steps = list(range(len(noise_diff_norm)))
+        plt.plot(steps, noise_diff_norm, 'b-', linewidth=2)
+        plt.xlabel('DDIM Step')
+        plt.ylabel('Noise Diff Norm')
+        plt.title(f'Noise Difference Norm vs DDIM Step - {animal_name}')
+        plt.grid(True, alpha=0.3)
+        plt.savefig(f"{output_dir}/noise_diff_norm_recon.png", dpi=150, bbox_inches='tight')
+        plt.close()
+        print("Reconstruction Noise Diff Norm plot saved at:", os.path.join(output_dir, "noise_diff_norm_recon.png"))
+
+        # csv_path = os.path.join(output_dir, "mse.csv")
+        # if not os.path.exists(csv_path):
+        #     with open(csv_path, 'w') as f:
+        #         f.write("t, mse_x_t, mse_x_sample\n")
 
         for t, x_t in enumerate(intermediates["pred_x0"]):
             x_sample = model.decode_first_stage(x_t)
-            mse_x_t = F.mse_loss(x_t, intermediates_inversion["pred_x0"][0]).item()
-            mse_x_sample = F.mse_loss(x_sample, model.decode_first_stage(intermediates["pred_x0"][0])).item()
-            
-            # Print and write to file
-            print(t, ",", mse_x_t, ",", mse_x_sample)
-            with open(csv_path, 'a') as f:
-                f.write(f"{t}, {mse_x_t}, {mse_x_sample}\n")
+            # mse_x_t = F.mse_loss(x_t, intermediates_inversion["pred_x0"][0]).item()
+            # mse_x_sample = F.mse_loss(x_sample, model.decode_first_stage(intermediates["pred_x0"][0])).item()
+            ### Print and write to file
+            # print(t, ",", mse_x_t, ",", mse_x_sample)
+            # with open(csv_path, 'a') as f:
+            #     f.write(f"{t}, {mse_x_t}, {mse_x_sample}\n")
 
             x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
             x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
