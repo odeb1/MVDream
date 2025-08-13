@@ -413,86 +413,139 @@ def run_ddim_depth_ablation(args):
     
     return optimal_depth
 
-def run_rewire_switch_ablation(args):
-    """Run ablation study for different rewire switch configurations"""
-    print("Run ablation study for different rewire switch configurations.")
-    base_output_dir = f"{args.folder_path_save}/ablations_rewire_switch/{args.animal_name}_wings_up"
-    os.makedirs(base_output_dir, exist_ok=True)
+
+def _run_single_configuration(args, rewire_switch, config_name, base_output_dir):
+    """Helper function to run the generation and saving process for a single configuration."""
+    print(f"--- Running configuration: {config_name} ---")
     
-    # Run 16 iterations with different rewire configurations
-    for i in range(16):
-        # Create rewire switch configuration with only one True value
-        rewire_switch = [False] * 16
-        rewire_switch[i] = True
-        
-        # Create config override
-        config_override = OmegaConf.create({
-            "model": {
-                "params": {
-                    "unet_config": {
-                        "params": {
-                            "rewire_switch": rewire_switch
-                        }
+    # Create config override
+    config_override = OmegaConf.create({
+        "model": {
+            "params": {
+                "unet_config": {
+                    "params": {
+                        "rewire_switch": rewire_switch
                     }
                 }
             }
-        })
+        }
+    })
 
-        # Create output directory for this configuration
-        iteration_dir = os.path.join(base_output_dir, f"config_{i}")
-        os.makedirs(iteration_dir, exist_ok=True)
+    # Create output directory for this configuration
+    iteration_dir = os.path.join(base_output_dir, config_name)
+    os.makedirs(iteration_dir, exist_ok=True)
 
-        # Build model with this configuration
-        model = build_model(args.model_name, ckpt_path=args.ckpt_path, config_overrides=config_override)
-        model.device = args.device
-        model.to(args.device)
-        model.eval()
+    # Build model with this configuration
+    model = build_model(args.model_name, ckpt_path=args.ckpt_path, config_overrides=config_override)
+    model.device = args.device
+    model.to(args.device)
+    model.eval()
 
-        # Save configuration
-        with open(os.path.join(iteration_dir, "rewire_config.json"), 'w') as f:
-            json.dump({"rewire_switch": rewire_switch}, f, indent=4)
+    # Save configuration
+    with open(os.path.join(iteration_dir, "rewire_config.json"), 'w') as f:
+        json.dump({"rewire_switch": rewire_switch}, f, indent=4)
 
-        # Run generation with this configuration
-        sampler = DDIMSampler(model)
-        uc = model.get_learned_conditioning([""]).to(args.device)
 
-        # Set up camera if needed
-        camera = get_camera(args.num_frames//2, elevation=args.camera_elev,
-                          azimuth_start=args.camera_azim, 
-                          azimuth_span=args.camera_azim_span) if args.use_camera else None
-        if camera is not None:
-            if FORMAT_INTERLEAVED:
-                camera = camera.repeat_interleave(2*args.num_frames//args.num_frames,dim=0).to(args.device)
-            else:
-                camera = camera.repeat(2*args.num_frames//args.num_frames,1).to(args.device)
+    # Run generation with this configuration
+    sampler = DDIMSampler(model)
+    uc = model.get_learned_conditioning([""]).to(args.device)
 
-        # Generate images
-        t = args.text + args.suffix
-        images, _, _ = t2i(model, args.size, t, uc, sampler, args.animal_name,
-                    seed=args.seed, inversion_seed=args.inversion_seed,
-                    step=args.step, scale=10, batch_size=args.num_frames,
-                    ddim_eta=0.0, dtype=torch.float32 if not args.fp16 else torch.float16,
-                    device=args.device, camera=camera, num_frames=args.num_frames,
-                    ddim_depth=args.ddim_depth)
+    # Set up camera if needed
+    camera = get_camera(args.num_frames//2, elevation=args.camera_elev,
+                      azimuth_start=args.camera_azim, 
+                      azimuth_span=args.camera_azim_span) if args.use_camera else None
+    if camera is not None:
+        if FORMAT_INTERLEAVED:
+            camera = camera.repeat_interleave(2*args.num_frames//args.num_frames,dim=0).to(args.device)
+        else:
+            camera = camera.repeat(2*args.num_frames//args.num_frames,1).to(args.device)
 
-        # Save results
-        input_images = []
-        target_images = []
-        for idx, img in enumerate(images):
-            Image.fromarray(img).save(os.path.join(iteration_dir, f"sample_{idx}.png"))
-            if idx % 2 == 0:
-                input_images.append(img)
-            else:
-                target_images.append(img)
+    # Generate images
+    t = args.text + args.suffix
+    images, _, _ = t2i(model, args.size, t, uc, sampler, args.animal_name,
+                seed=args.seed, inversion_seed=args.inversion_seed,
+                step=args.step, scale=10, batch_size=args.num_frames,
+                ddim_eta=0.0, dtype=torch.float32 if not args.fp16 else torch.float16,
+                device=args.device, camera=camera, num_frames=args.num_frames,
+                ddim_depth=args.ddim_depth)
 
-        # Save combined visualizations
-        input_images_concat = np.concatenate(input_images, axis=1)
-        target_images_concat = np.concatenate(target_images, axis=1)
-        input_target_combined = np.concatenate((input_images_concat, target_images_concat), axis=0)
-        Image.fromarray(input_target_combined).save(os.path.join(iteration_dir, "input_target_combined.png"))
-        
-        Image.fromarray(input_images_concat).save(os.path.join(iteration_dir, "input_images.png"))
-        Image.fromarray(target_images_concat).save(os.path.join(iteration_dir, "target_images.png"))
+    # Save results
+    input_images = []
+    target_images = []
+    for idx, img in enumerate(images):
+        Image.fromarray(img).save(os.path.join(iteration_dir, f"sample_{idx}.png"))
+        if idx % 2 == 0:
+            input_images.append(img)
+        else:
+            target_images.append(img)
+
+    # Save combined visualizations
+    input_images_concat = np.concatenate(input_images, axis=1)
+    target_images_concat = np.concatenate(target_images, axis=1)
+    input_target_combined = np.concatenate((input_images_concat, target_images_concat), axis=0)
+    Image.fromarray(input_target_combined).save(os.path.join(iteration_dir, "input_target_combined.png"))
+    
+    Image.fromarray(input_images_concat).save(os.path.join(iteration_dir, "input_images.png"))
+    Image.fromarray(target_images_concat).save(os.path.join(iteration_dir, "target_images.png"))
+    
+    print(f"--- Finished configuration: {config_name} ---")
+
+def create_switch(*ranges):
+    """Creates a 16-element boolean list, setting specified index ranges to True."""
+    switch = [False] * 16
+    for start, end in ranges:
+        for i in range(start, end + 1):
+            switch[i] = True
+    return switch
+
+def run_rewire_switch_ablation(args):
+    """Run ablation study for different rewire switch configurations"""
+    print("Run ablation study for different rewire switch configurations.")
+    base_output_dir = f"{args.folder_path_save}/ablations_rewire_switch/{args.animal_name}"
+    os.makedirs(base_output_dir, exist_ok=True)
+    
+    # --- Define all configurations to be tested ---
+    configurations = {}
+
+    # 1. 16 iterations with only one True value
+    for i in range(16):
+        configurations[f"config_only_{i}_true"] = create_switch((i, i))
+
+    # 2. All 16 are False
+    configurations["config_all_false"] = [False] * 16
+    
+    # 3. All 16 are True (Corrected from original code)
+    configurations["config_all_true"] = [True] * 16
+
+    # 4. Only 0 to 7 are True
+    configurations["config_0_to_7_true"] = create_switch((0, 7))
+    
+    # 5. Only 8 to 15 are True
+    configurations["config_8_to_15_true"] = create_switch((8, 15))
+
+    # --- Check for the flag to run additional, more complex ablations ---
+    if args.run_more_rsa_ablations:
+        print("--- 'run_more_ablations' flag is set. Adding more configurations. ---")
+        more_configs = {
+            "config_0_to_3_true": create_switch((0, 3)),
+            "config_4_to_7_true": create_switch((4, 7)),
+            "config_8_to_10_true": create_switch((8, 10)),
+            "config_10_to_15_true": create_switch((10, 15)),
+            "config_0_to_3_and_10_to_15_true": create_switch((0, 3), (10, 15)),
+            "config_4_to_7_and_8_to_10_true": create_switch((4, 7), (8, 10)),
+            "config_4_to_7_and_10_to_15_true": create_switch((4, 7), (10, 15)),
+        }
+        configurations.update(more_configs)
+
+    # --- Run the experiments for each defined configuration ---
+    for name, switch_config in configurations.items():
+        _run_single_configuration(
+            args=args,
+            rewire_switch=switch_config,
+            config_name=name,
+            base_output_dir=base_output_dir
+        )
+
 
 
 if __name__ == "__main__":
@@ -518,8 +571,9 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
                         choices=available_animal_assets)
-    parser.add_argument("--run_ddim_depth_ablation", action="store_true", default=True)
-    parser.add_argument("--run_rewire_switch_ablation", action="store_true", default=False)
+    parser.add_argument("--run_ddim_depth_ablation", default=False) # action="store_true", default=True)
+    parser.add_argument("--run_rewire_switch_ablation", default=True) # action="store_true", default=False)
+    parser.add_argument("--run_more_rsa_ablations", default=True, help="This include RSA only on layers 0-3, 4-7, 8-10, 10-15, [0-3 & 10-15], [4-7 & 8-10], [0-3 & 8-10], [4-7 & 10-15]")
     parser.add_argument("--folder_path_save", type=str, default="../results", help="folder_path")
     args = parser.parse_args()
 
@@ -528,6 +582,5 @@ if __name__ == "__main__":
         args.ddim_depth = optimal_depth
     if args.run_rewire_switch_ablation:
         run_rewire_switch_ablation(args)
-    
-    # args.ddim_depth = optimal_depth
+
     run_forward_inference(args)
