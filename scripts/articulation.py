@@ -65,7 +65,7 @@ def save_metrics_json(metrics_dict, filepath):
         
 def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversion_seed=2025,
         num_frames=8, step=20, scale=7.5, batch_size=8, ddim_eta=0., 
-        dtype=torch.float32, device="cuda", camera=None, ddim_depth=35,):
+        dtype=torch.float32, device="cuda", camera=None, ddim_depth=35, use_ddim_inversion=True):
     set_seed(seed)
     if type(prompt)!=list:
         prompt = [prompt]
@@ -94,19 +94,34 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
             c_["num_frames"] = uc_["num_frames"] = num_frames
         shape = [num_frames//2, image_size // 8, image_size // 8] # [4, 32, 32]
 
-        ### load saved trajectory
-        asset = f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{inversion_seed}.torch"
-        sampler.make_schedule(ddim_num_steps=step, ddim_eta=0)
+        x_T = None # Initialize x_T to None
+        asset = None
+        if use_ddim_inversion:
+            print("DDIM Inversion is ON. Loading from cached trajectory.")
+            ### load saved trajectory
+            asset = f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{inversion_seed}.torch"
+            sampler.make_schedule(ddim_num_steps=step, ddim_eta=0)
 
-        cached_trajectory = torch.load(asset)   
-        if "rendered" in asset:
-            cached_trajectory = cached_trajectory[::-1] 
-        # now cached_trajectory is from noisiest to cleanest
+            try:
+                cached_trajectory = torch.load(asset)
+            except FileNotFoundError:
+                print(f"ERROR: DDIM inversion asset not found at {asset}")
+                print("Please generate the inversion trajectory first or run with DDIM inversion turned off.")
+                # Return an empty list or raise an error to stop execution
+                return [], [], []
             
-        os.makedirs(f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}_{current_time}/ddim_depth_{ddim_depth}", exist_ok=True)
-        # x_T = sampler.stochastic_encode(cached_trajectory[0], torch.tensor([20]).to(device))
-        x_T = cached_trajectory[ddim_depth].to(device)
-        visualize(model, x_T, f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}_{current_time}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_t2i-starting-point.png")
+            if "rendered" in asset:
+                cached_trajectory = cached_trajectory[::-1] 
+            # now cached_trajectory is from noisiest to cleanest
+
+            os.makedirs(f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}_{current_time}/ddim_depth_{ddim_depth}", exist_ok=True)
+            # x_T = sampler.stochastic_encode(cached_trajectory[0], torch.tensor([20]).to(device))
+            x_T = cached_trajectory[ddim_depth].to(device)
+            visualize(model, x_T, f"{args.folder_path_save}/outputs/{animal_name}_seed{args.seed}_{current_time}/ddim_depth_{ddim_depth}/ddim_depth_{ddim_depth}_t2i-starting-point.png")
+        else:
+            print("DDIM Inversion is OFF. Starting from random noise.")
+            # When x_T is None, the DDIMSampler will automatically start from random noise.
+
 
         ### denoise with supervision from reference frame through rewired self-attention
         samples_ddim, intermediates = sampler.sample(S=step, conditioning=c_,
@@ -211,7 +226,7 @@ def run_forward_inference(args):
     for j in range(args.num_rows):
         img, _, _ = t2i(model, args.size, t, uc, sampler, args.animal_name, seed=args.seed, inversion_seed=args.inversion_seed,
                   step=args.step, scale=10, batch_size=batch_size, ddim_eta=0.0, dtype=dtype, device=device, 
-                  camera=camera, num_frames=args.num_frames, ddim_depth=args.ddim_depth)
+                  camera=camera, num_frames=args.num_frames, ddim_depth=args.ddim_depth, use_ddim_inversion=args.use_ddim_inversion)
         for i, im in enumerate(img):
             Image.fromarray(im).save(f"{args.folder_path_save}/outputs/{args.animal_name}_seed{args.seed}_{current_time}/ddim_depth_{args.ddim_depth}/sample_{i}.png")
             if i % 2 == 0:
@@ -301,7 +316,8 @@ def run_ddim_depth_ablation(args):
                  step=args.step, scale=10, batch_size=batch_size, 
                  ddim_eta=0.0, dtype=dtype, device=device,
                  camera=camera, num_frames=args.num_frames, 
-                 ddim_depth=ddim_depth)
+                 ddim_depth=ddim_depth,
+                 use_ddim_inversion=True)
         
         # Save the results for this depth
         input_images = []
@@ -467,7 +483,8 @@ def _run_single_configuration(args, rewire_switch, config_name, base_output_dir)
                 step=args.step, scale=10, batch_size=args.num_frames,
                 ddim_eta=0.0, dtype=torch.float32 if not args.fp16 else torch.float16,
                 device=args.device, camera=camera, num_frames=args.num_frames,
-                ddim_depth=args.ddim_depth)
+                ddim_depth=args.ddim_depth,
+                use_ddim_inversion=True)
 
     # Save results
     input_images = []
@@ -575,6 +592,8 @@ if __name__ == "__main__":
     parser.add_argument("--run_rewire_switch_ablation", default=True) # action="store_true", default=False)
     parser.add_argument("--run_more_rsa_ablations", default=True, help="This include RSA only on layers 0-3, 4-7, 8-10, 10-15, [0-3 & 10-15], [4-7 & 8-10], [0-3 & 8-10], [4-7 & 10-15]")
     parser.add_argument("--folder_path_save", type=str, default="../results", help="folder_path")
+    parser.add_argument("--use_ddim_inversion", default=False) #action="store_true",
+                        # help="If set, use DDIM inversion from a cached trajectory. Otherwise, start from random noise.")
     args = parser.parse_args()
 
     if args.run_ddim_depth_ablation:
