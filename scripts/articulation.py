@@ -588,12 +588,12 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--animal_name", type=str, default="horse_stallion_highpoly_color_2", 
                         choices=available_animal_assets)
-    parser.add_argument("--run_ddim_depth_ablation", default=False) # action="store_true", default=True)
-    parser.add_argument("--run_rewire_switch_ablation", default=True) # action="store_true", default=False)
-    parser.add_argument("--run_more_rsa_ablations", default=True, help="This include RSA only on layers 0-3, 4-7, 8-10, 10-15, [0-3 & 10-15], [4-7 & 8-10], [0-3 & 8-10], [4-7 & 10-15]")
+    parser.add_argument("--run_ddim_depth_ablation", action="store_true")
+    parser.add_argument("--run_rewire_switch_ablation", action="store_true")
+    parser.add_argument("--run_more_rsa_ablations", action="store_true", help="This include RSA only on layers 0-3, 4-7, 8-10, 10-15, [0-3 & 10-15], [4-7 & 8-10], [0-3 & 8-10], [4-7 & 10-15]")
     parser.add_argument("--folder_path_save", type=str, default="../results", help="folder_path")
-    parser.add_argument("--use_ddim_inversion", default=False) #action="store_true",
-                        # help="If set, use DDIM inversion from a cached trajectory. Otherwise, start from random noise.")
+    parser.add_argument("--use_ddim_inversion", action="store_true",
+                        help="If set, use DDIM inversion from a cached trajectory. Otherwise, start from random noise.")
     args = parser.parse_args()
 
     if args.run_ddim_depth_ablation:
