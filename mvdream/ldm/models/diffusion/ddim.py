@@ -170,7 +170,7 @@ class DDIMSampler(object):
                                       unconditional_conditioning=unconditional_conditioning, **kwargs)
             img, pred_x0, model_uncond, model_t = outs
             if cached_trajectory is not None:
-                img[::2] = cached_trajectory[i+start_time_step][::2].clone().to(device)
+                img[::2] = img[::2] * 0.5 + 0.5 * cached_trajectory[i+start_time_step][::2].clone().to(device)
             if callback: callback(i)
             if img_callback: img_callback(pred_x0, i)
 

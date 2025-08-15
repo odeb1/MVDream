@@ -20,4 +20,6 @@ python scripts/ddim_inversion.py --seed 2222 --text "a giraffe standing still" -
 python scripts/articulation.py --seed 2222 --inversion_seed 2222 --text "a tiger running, four legs off ground" --animal_name tiger_8_views_rest --num_frames 16 --run_ddim_depth_ablation
 python scripts/articulation.py --seed 2222 --inversion_seed 2222 --text "a hummingbird flapping wings, flying" --animal_name humming_8_views --num_frames 16 --run_ddim_depth_ablation
 python scripts/articulation.py --seed 2222 --inversion_seed 2222 --text "a giraffe running, four legs off ground" --animal_name giraffe --num_frames 8 --run_ddim_depth_ablation
+
+python scripts/ddim_depth_ablation_plot.py --seed 2222 --inversion_seed 2222 --text "a tiger running, four legs off ground" --animal_name tiger_8_views_rest --num_frames 16
 ```
