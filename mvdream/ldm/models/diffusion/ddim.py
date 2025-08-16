@@ -170,7 +170,11 @@ class DDIMSampler(object):
                                       unconditional_conditioning=unconditional_conditioning, **kwargs)
             img, pred_x0, model_uncond, model_t = outs
             if cached_trajectory is not None:
-                img[::2] = img[::2] * 0.5 + 0.5 * cached_trajectory[i+start_time_step][::2].clone().to(device)
+                # 0.5, 0.5 will perform a 50/50 blend (a linear interpolation) between the currently generated image and a pre-saved image from a cached_trajectory. 
+                # The purpose of this technique is to guide or influence the image generation process by blending it with a previously generated one.
+                # It is averaging the two images together at each step of the diffusion process.
+                # cached_trajectory[i+start_time_step] gets the image from the saved trajectory that corresponds to the current denoising step i.
+                img[::2] = img[::2] * 0.6 + 0.4 * cached_trajectory[i+start_time_step][::2].clone().to(device)
             if callback: callback(i)
             if img_callback: img_callback(pred_x0, i)
 
