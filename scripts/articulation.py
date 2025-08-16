@@ -65,7 +65,7 @@ def save_metrics_json(metrics_dict, filepath):
         
 def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversion_seed=2025,
         num_frames=8, step=20, scale=7.5, batch_size=8, ddim_eta=0., 
-        dtype=torch.float32, device="cuda", camera=None, ddim_depth=35, use_ddim_inversion=True):
+        dtype=torch.float32, device="cuda", camera=None, ddim_depth=35, use_ddim_inversion=False):
     set_seed(seed)
     if type(prompt)!=list:
         prompt = [prompt]
@@ -96,7 +96,8 @@ def t2i(model, image_size, prompt, uc, sampler, animal_name, seed=2025, inversio
 
         x_T = None # Initialize x_T to None
         asset = None
-        if use_ddim_inversion:
+        
+        if args.use_ddim_inversion:
             print("DDIM Inversion is ON. Loading from cached trajectory.")
             ### load saved trajectory
             asset = f"{args.folder_path_save}/assets/ddim_inv_trajectories_of_renderings/x_inter_rendered_{animal_name}_seed{inversion_seed}.torch"
@@ -317,7 +318,7 @@ def run_ddim_depth_ablation(args):
                  ddim_eta=0.0, dtype=dtype, device=device,
                  camera=camera, num_frames=args.num_frames, 
                  ddim_depth=ddim_depth,
-                 use_ddim_inversion=True)
+                 use_ddim_inversion=args.use_ddim_inversion)
         
         # Save the results for this depth
         input_images = []
@@ -484,7 +485,7 @@ def _run_single_configuration(args, rewire_switch, config_name, base_output_dir)
                 ddim_eta=0.0, dtype=torch.float32 if not args.fp16 else torch.float16,
                 device=args.device, camera=camera, num_frames=args.num_frames,
                 ddim_depth=args.ddim_depth,
-                use_ddim_inversion=True)
+                use_ddim_inversion=args.use_ddim_inversion)
 
     # Save results
     input_images = []
