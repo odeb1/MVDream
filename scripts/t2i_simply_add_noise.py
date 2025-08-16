@@ -43,7 +43,7 @@ def t2i(model, image_size, prompt, uc, sampler, step=20, scale=7.5, batch_size=8
         x = []
         for i in range(4):
             # Load the image
-            x.append(to_tensor(Image.open(os.path.join('assets/renderings45/', f'image_{i}.png'))))
+            x.append(to_tensor(Image.open(os.path.join('/data/results/outputs/humming_8_views_seed2222_250805170217/ddim_depth_25/', f'sample_{i}.png'))))
         x = torch.stack(x).to(device) * 2.0 - 1.0
         x = F.interpolate(x, (256, 256))
         print(x.shape)
@@ -78,7 +78,7 @@ def t2i(model, image_size, prompt, uc, sampler, step=20, scale=7.5, batch_size=8
             x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
             x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
             x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
-            Image.fromarray(x_sample).save(f"ddim_inv_artefacts/x_inter_t={t}.png")
+            # Image.fromarray(x_sample).save(f"ddim_inv_artefacts/x_inter_t={t}.png")
 
         samples_ddim, intermediates = sampler.sample(S=step, conditioning=c_,
                                     batch_size=batch_size, shape=shape,
@@ -92,7 +92,7 @@ def t2i(model, image_size, prompt, uc, sampler, step=20, scale=7.5, batch_size=8
             x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)
             x_sample = 255. * x_sample.permute(0,2,3,1).cpu().numpy()
             x_sample = np.concatenate(list(x_sample.astype(np.uint8)), 1)
-            Image.fromarray(x_sample).save(f"forward_cache_artefacts/x_inter_t={t+args.start_time_step}.png")
+            # Image.fromarray(x_sample).save(f"forward_cache_artefacts/x_inter_t={t+args.start_time_step}.png")
     
         sys.exit(0)
 

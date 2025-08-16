@@ -29,7 +29,8 @@ def t2i(model, image_size, prompt, uc, sampler, step=20, scale=7.5, batch_size=8
         if camera is not None:
             c_["camera"] = uc_["camera"] = camera
             c_["num_frames"] = uc_["num_frames"] = num_frames
-        sampler.make_schedule(ddim_num_steps=50, ddim_eta=0, verbose=True)
+        
+        # DDIM sampler schedule is now managed inside the main loop
         shape = [4, image_size // 8, image_size // 8]
         samples_ddim, _ = sampler.sample(S=step, conditioning=c_,
                                         batch_size=batch_size, shape=shape,
@@ -67,49 +68,72 @@ if __name__ == "__main__":
     device = args.device
     batch_size = max(4, args.num_frames)
 
-    print("load t2i model ... ")
-    rewire_switch = [0]*16
-    config_override = OmegaConf.create({
-        "model": {
-            "params": {
-                "unet_config": {
-                    "params": {
-                        "rewire_switch": rewire_switch
+    # Loop through each of the 16 layers
+    for layer_number in range(16):
+        print(f"\n{'='*20} Generating for Layer {layer_number} {'='*20}")
+        
+        # --- Create rewire_switch for the current layer ---
+        rewire_switch = [0] * 16
+        rewire_switch[layer_number] = 1
+        print(f"Using rewire_switch: {rewire_switch}")
+
+        config_override = OmegaConf.create({
+            "model": {
+                "params": {
+                    "unet_config": {
+                        "params": {
+                            "rewire_switch": rewire_switch
+                        }
                     }
                 }
             }
-        }
-    })
-    if args.config_path is None:
-        model = build_model(args.model_name, ckpt_path=args.ckpt_path, config_overrides=config_override)
-    else:
-        assert args.ckpt_path is not None, "ckpt_path must be specified!"
-        config = OmegaConf.load(args.config_path)
-        model = instantiate_from_config(config.model)
-        model.load_state_dict(torch.load(args.ckpt_path, map_location='cpu'))
-    model.device = device
-    model.to(device)
-    model.eval()
+        })
+        
+        # --- Load the model inside the loop to apply the new config ---
+        print("Loading t2i model...")
+        if args.config_path is None:
+            model = build_model(args.model_name, ckpt_path=args.ckpt_path, config_overrides=config_override)
+        else:
+            assert args.ckpt_path is not None, "ckpt_path must be specified!"
+            config = OmegaConf.load(args.config_path)
+            # Apply override to loaded config
+            config.merge_with(config_override)
+            model = instantiate_from_config(config.model)
+            model.load_state_dict(torch.load(args.ckpt_path, map_location='cpu'))
+        
+        model.device = device
+        model.to(device)
+        model.eval()
 
-    sampler = DDIMSampler(model)
-    uc = model.get_learned_conditioning( [""] ).to(device)
-    print("load t2i model done . ")
+        sampler = DDIMSampler(model)
+        sampler.make_schedule(ddim_num_steps=50, ddim_eta=0, verbose=False)
+        uc = model.get_learned_conditioning([""]).to(device)
+        print("Load t2i model done.")
 
-    # pre-compute camera matrices
-    if args.use_camera:
-        camera = get_camera(args.num_frames, elevation=args.camera_elev, 
-                azimuth_start=args.camera_azim, azimuth_span=args.camera_azim_span)
-        camera = camera.repeat(batch_size//args.num_frames,1).to(device)
-    else:
-        camera = None
-    
-    t = args.text + args.suffix
-    set_seed(args.seed)
-    images = []
-    for j in range(3):
+        # --- Pre-compute camera matrices ---
+        if args.use_camera:
+            camera = get_camera(args.num_frames, elevation=args.camera_elev, 
+                    azimuth_start=args.camera_azim, azimuth_span=args.camera_azim_span)
+            camera = camera.repeat(batch_size//args.num_frames,1).to(device)
+        else:
+            camera = None
+        
+        t = args.text + args.suffix
+        set_seed(args.seed)
+        
+        # --- Generate Image ---
+        # Note: The original script generated 3 rows. For simplicity, this version generates one.
+        # You can re-introduce the inner loop if you need multiple rows per layer.
         img = t2i(model, args.size, t, uc, sampler, step=50, scale=10, batch_size=batch_size, ddim_eta=0.0, 
-                dtype=dtype, device=device, camera=camera, num_frames=args.num_frames)
+                  dtype=dtype, device=device, camera=camera, num_frames=args.num_frames)
         img = np.concatenate(img, 1)
-        images.append(img)
-    images = np.concatenate(images, 0)
-    Image.fromarray(images).save(f"sample.png")
+
+        # --- Save Image with layer-specific name ---
+        output_filename = f"sample_{layer_number}.png"
+        Image.fromarray(img).save(output_filename)
+        print(f"Saved output to {output_filename}")
+        
+        # Clean up model to free GPU memory for the next iteration
+        del model
+        del sampler
+        torch.cuda.empty_cache()
